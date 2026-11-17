@@ -41,6 +41,7 @@ class Paginas:
     COMPLIANCE  = "Compliance"
     DOCUMENTAL  = "Centro Documental"
     CLIENTES    = "Gestión de Clientes"
+    MONITOREO   = "Monitoreo Transaccional"
     AGENTES     = "Gestión de Agentes"
     AUDITORIA   = "Log de Auditoría"
     MI_PERFIL   = "Mi Perfil"
@@ -58,6 +59,10 @@ class Paginas:
 # les falta acceso al resto. Es un repositorio compartido, no una herramienta
 # de cumplimiento; que su código viva en compliance_ui.py es herencia, no razón.
 ROLES_COMPLIANCE = {"admin", "compliance", "super_admin"}
+
+# ── Módulo Monitoreo Transaccional ────────────────────────────
+# Los roles viven en el módulo para que pantalla y servicio usen la misma regla.
+from app.monitoreo_tx.config import ROLES_MONITOREO  # noqa: E402
 
 
 class TabsCompliance:
@@ -662,6 +667,10 @@ def sidebar(user: dict) -> tuple[str, str | None]:
         if _rol in {"admin", "compliance", "super_admin", "comercial", "cic", "manager_comercial", "consulta"}:
             _nav_opts.append(Paginas.CLIENTES)
 
+        # Monitoreo Transaccional — transacciones de clientes AdamoPay (datos de terceros)
+        if _rol in ROLES_MONITOREO:
+            _nav_opts.append(Paginas.MONITOREO)
+
         if _rol in Roles.CAN_VIEW_AGENTES:
             _nav_opts.append(Paginas.AGENTES)
 
@@ -823,6 +832,12 @@ def main():
             st.stop()
         from app.components.clientes_ui import page_clientes
         page_clientes(user)
+    elif page == Paginas.MONITOREO:
+        if user.get("rol") not in ROLES_MONITOREO:
+            st.error("Acceso denegado al Monitoreo Transaccional.")
+            st.stop()
+        from app.monitoreo_tx.ui.pagina import render as page_monitoreo
+        page_monitoreo(user)
 
 
 if __name__ == "__main__":

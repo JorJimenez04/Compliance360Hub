@@ -66,6 +66,9 @@ ALL_MIGRATIONS: list[str] = [
     "030_contrato_servicios.sql",
     "031_cliente_documentos.sql",
     "032_cliente_historial_riesgo.sql",
+    "033_optional_nit.sql",
+    "034_rol_cic.sql",
+    "035_monitoreo_transaccional.sql",
 ]
 
 # Tablas / columnas a validar tras las migraciones
@@ -74,6 +77,8 @@ VALIDATION_QUERIES: list[tuple[str, str]] = [
     ("agente_kpi_diario", "SELECT COUNT(*) FROM agente_kpi_diario"),
     ("kpi_docs_personales (col)",
      "SELECT kpi_docs_personales FROM agentes LIMIT 1"),
+    ("tx_transacciones",  "SELECT COUNT(*) FROM tx_transacciones"),
+    ("tx_empresas",       "SELECT COUNT(*) FROM tx_empresas"),
 ]
 
 

@@ -35,6 +35,34 @@ Compliance360_Hub/
 └── README.md
 ```
 
+## Monitoreo Transaccional (AdamoPay)
+
+Ítem **Monitoreo Transaccional** del menú (roles `super_admin`, `admin`, `compliance`).
+Código en `app/monitoreo_tx/` (integrado desde AdamoPay_Analisis-ReporteTX); tablas `tx_*`
+creadas por la migración `035_monitoreo_transaccional.sql`.
+
+| Pestaña | Contenido |
+|---|---|
+| Tablero | Indicadores, evolución, movimientos, ranking de beneficiarios, bancos y horarios, devoluciones, detalle con exporte CSV y evaluación de riesgo GAFI/UIAF indicativa |
+| Cargas | Subir el reporte de AdamoPay (Excel maestro o CSV «Historial de pagos» de una empresa) y bitácora de cargas |
+| Empresas | Enlazar cada empresa del reporte con su ficha de Gestión de Clientes |
+
+La carga es incremental e idempotente: solo escribe transacciones nuevas o modificadas, y un
+archivo idéntico al último cargado se omite. Cada carga, enlace y descarga de CSV queda en
+`log_auditoria`.
+
+El Excel maestro completo supera el límite de subida de la app (10 MB) y procesarlo usa
+cerca de 1 GB de memoria; se carga desde el equipo del responsable:
+
+```bash
+python scripts/cargar_adamopay.py --archivo "D:\AdamoPay\Data_Clients&TX.xlsx"            # base del .env
+python scripts/cargar_adamopay.py --archivo reporte.xlsx --db "<DATABASE_PUBLIC_URL de Railway>"
+python scripts/cargar_adamopay.py --archivo historial.csv --empresa "CM Group"
+```
+
+Pruebas de sincronización contra PostgreSQL (la base indicada se vacía):
+`$env:TX_TEST_PG_URL = "postgresql://adamo:adamo_dev_2026@localhost:5432/tx_test"`.
+
 ## Módulos de Pipeline (Estados)
 
 ```
