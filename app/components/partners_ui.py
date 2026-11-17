@@ -6,75 +6,7 @@ de Debida Diligencia avanzada (ISO / SARLAFT / GAFI).
 
 from __future__ import annotations
 
-# ── Color maps ────────────────────────────────────────────────────────────────
-_COLORES_PIPELINE: dict[str, str] = {
-    "Prospecto":       "#6b7280",
-    "En Calificación": "#f59e0b",
-    "Onboarding":      "#3b82f6",
-    "Activo":          "#5fe9d0",
-    "Suspendido":      "#f97316",
-    "Terminado":       "#ef4444",
-}
-
-# ── Criticidad Operativa (ISO/GAFI) ──────────────────────────────────────────
-_COLORES_CRITICIDAD: dict[str, str] = {
-    "DDI":                   "#ef4444",   # Rojo — Debida Diligencia Intensificada
-    "DDI - Entidad Regulada": "#5fe9d0",  # Teal — Regulada; complejidad esperada
-    "DDS-Alto":              "#f97316",   # Naranja
-    "DDS-Simplificado":      "#f59e0b",   # Amarillo
-    "Estándar":              "#22c55e",   # Verde
-}
-
-# Mantener mapa legacy para compatibilidad con análisis de riesgo SARLAFT
-_COLORES_RIESGO: dict[str, str] = {
-    "Bajo":     "#22c55e",
-    "Medio":    "#f59e0b",
-    "Alto":     "#f97316",
-    "Muy Alto": "#ef4444",
-}
-
-_COLORES_SARLAFT: dict[str, str] = {
-    "Al Día":      "#5fe9d0",
-    "En Revisión": "#f59e0b",
-    "Pendiente":   "#6b7280",
-    "Vencido":     "#ef4444",
-}
-
-# Borde de tarjeta según nivel de criticidad
-_BORDER_CRITICIDAD: dict[str, str] = {
-    "DDI":                   "#ef4444",
-    "DDI - Entidad Regulada": "#5fe9d0",
-    "DDS-Alto":              "#f97316",
-    "DDS-Simplificado":      "#f59e0b",
-    "Estándar":              "#22c55e",
-}
-
-_SCORE_COLOR: dict[str, str] = {
-    "Bajo":     "#22c55e",
-    "Medio":    "#f59e0b",
-    "Alto":     "#f97316",
-    "Muy Alto": "#ef4444",
-}
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _pill(texto: str, color: str) -> str:
-    """Badge HTML de una línea; sin comentarios ni posicionamiento absoluto."""
-    return (
-        f'<span style="background:{color}22;color:{color};border:1px solid {color}44;'
-        f'border-radius:9999px;padding:2px 10px;font-size:11px;font-weight:600;'
-        f'white-space:nowrap">{texto}</span>'
-    )
-
-
-def _capacidad_badge(label: str, activo: bool) -> str:
-    color = "#5fe9d0" if activo else "#374151"
-    texto_color = "#1f2937" if activo else "#6b7280"
-    return (
-        f'<span style="background:{color};color:{texto_color};border-radius:4px;'
-        f'padding:1px 7px;font-size:10px;font-weight:600;margin-right:3px">{label}</span>'
-    )
-
 
 def _idx(row: dict, key: str, default=None):
     """Acceso seguro por clave a un dict de fila."""
@@ -812,8 +744,13 @@ def _panel_editar(aliado_id: int, user: dict) -> None:
                     )
 
                     # Auditoría ISO enriquecida para cambios de criticidad
-                    _set_changed = cambios.model_fields_set
-                    if _campos_criticidad & _set_changed:
+                    # model_fields_set solo indica qué campos se pasaron al formulario,
+                    # no si su valor realmente cambió — comparamos contra el valor previo.
+                    _campos_modificados = {
+                        k for k in cambios.model_fields_set
+                        if aliado.get(k) != getattr(cambios, k)
+                    }
+                    if _campos_criticidad & _campos_modificados:
                         audit.registrar(
                             username=user.get("username", ""),
                             accion="ESTADO_CHANGE",
@@ -833,7 +770,7 @@ def _panel_editar(aliado_id: int, user: dict) -> None:
                             resultado="exitoso",
                             rol_usuario=user.get("rol"),
                         )
-                    if _campos_compliance & _set_changed:
+                    if _campos_compliance & _campos_modificados:
                         audit.registrar(
                             username=user.get("username", ""),
                             accion="UPDATE",
@@ -846,11 +783,11 @@ def _panel_editar(aliado_id: int, user: dict) -> None:
                             entidad_id=aliado_id,
                             valores_anteriores={
                                 k: aliado.get(k)
-                                for k in _campos_compliance & _set_changed
+                                for k in _campos_compliance & _campos_modificados
                             },
                             valores_nuevos={
                                 k: cambios.model_dump(exclude_none=True).get(k)
-                                for k in _campos_compliance & _set_changed
+                                for k in _campos_compliance & _campos_modificados
                             },
                             resultado="exitoso",
                             rol_usuario=user.get("rol"),
