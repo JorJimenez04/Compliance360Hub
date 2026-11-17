@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 
-from config.settings import DATABASE_URL, BASE_DIR, DEBUG
+from config.settings import APP_TIMEZONE, DATABASE_URL, BASE_DIR, DEBUG
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,10 @@ engine = create_engine(
         "keepalives": 1,        # Activar señales de vida
         "keepalives_idle": 30,  # Enviar señal tras 30s de inactividad
         "keepalives_interval": 10,
-        "keepalives_count": 5
+        "keepalives_count": 5,
+        # Hora de Colombia en la sesión: CURRENT_TIMESTAMP / NOW() de las columnas
+        # TIMESTAMP guardan hora local y las TIMESTAMPTZ se leen en hora local.
+        "options": f"-c timezone={APP_TIMEZONE}",
     },
 )
 

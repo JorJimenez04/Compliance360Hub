@@ -21,7 +21,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpq-dev \
         gcc \
         curl \
+        tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+# ── Zona horaria: Colombia ───────────────────────────────────────
+# Railway corre en UTC. Con TZ (y tzdata instalado) la hora que usa Python
+# es la de Colombia; la de PostgreSQL se fija por sesión en db/database.py.
+ENV TZ=America/Bogota
 
 # ── Directorio de trabajo ─────────────────────────────────────────
 WORKDIR /app

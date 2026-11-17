@@ -15,6 +15,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 
+# ── Zona horaria ──────────────────────────────────────────
+# Los servidores (Railway) corren en UTC. Todas las horas que guarda y muestra
+# la app son de Colombia: Python vía TZ (aquí y en el Dockerfile) y PostgreSQL
+# vía la zona de la sesión (db/database.py). En Windows no existe tzset y el
+# equipo ya trabaja en su hora local, así que no se toca.
+APP_TIMEZONE: str = os.getenv("APP_TIMEZONE", "America/Bogota")
+if hasattr(__import__("time"), "tzset"):
+    import time as _time
+    os.environ["TZ"] = APP_TIMEZONE
+    _time.tzset()
+
 # ── Aplicación ────────────────────────────────────────────
 APP_NAME: str = os.getenv("APP_NAME", "Compliance360 Hub")
 APP_ENV: str = os.getenv("APP_ENV", "development")
