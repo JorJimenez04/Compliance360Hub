@@ -414,6 +414,8 @@ class _GraphFalso:
 
     def __init__(self, csv: bytes):
         self.csv, self.llamadas = csv, []
+        self.en_la_raiz = True
+        self.busqueda = []
 
     def post(self, url, data=None, timeout=None):
         self.llamadas.append(("POST", url))
@@ -423,7 +425,13 @@ class _GraphFalso:
     def get(self, url, headers=None, timeout=None, allow_redirects=True):
         self.llamadas.append(("GET", url))
         assert headers["Authorization"] == "Bearer tok"
-        if "root:/AdamoPay_Datos:/children" in url:
+        if "root:/AdamoPay_Datos?" in url:
+            if not self.en_la_raiz:
+                return _Resp(404, {"error": {"message": "itemNotFound"}})
+            return _Resp(200, {"id": "raiz", "name": "AdamoPay_Datos", "folder": {}})
+        if "/root/search(" in url:
+            return _Resp(200, {"value": self.busqueda})
+        if "/items/raiz/children" in url:
             return _Resp(200, {"value": [{"id": "f1", "name": "Cliente A", "folder": {}}],
                                "@odata.nextLink": "https://graph.microsoft.com/v1.0/pagina2"})
         if url.endswith("/pagina2"):
@@ -635,3 +643,31 @@ def test_credencial_se_guarda_cifrada_y_se_renueva(engine_pg_nube, monkeypatch):
     assert credenciales.info(engine_pg_nube)["cuenta"] == "jorge@holdingsbpo.co"
     credenciales.eliminar(engine_pg_nube)
     assert credenciales.info(engine_pg_nube) is None
+
+
+
+def test_onedrive_encuentra_la_carpeta_fuera_de_la_raiz():
+    from app.monitoreo_tx.nube.fuentes import ErrorFuente, FuenteOneDrive
+
+    graph = _GraphFalso(CSV_CLIENTE.encode("utf-8-sig"))
+    graph.en_la_raiz = False
+    # OneDrive respalda «Documentos»: la carpeta quedó dentro
+    graph.busqueda = [
+        {"id": "raiz", "name": "AdamoPay_Datos", "folder": {},
+         "parentReference": {"path": "/drive/root:/Documentos/2.%20DESARROLLOS_GITHUB/Documentos"}},
+        {"id": "otro", "name": "AdamoPay_Datos_viejo", "folder": {}},        # nombre parecido: no cuenta
+        {"id": "arch", "name": "AdamoPay_Datos", "file": {}},                 # un archivo: no cuenta
+    ]
+    fuente = FuenteOneDrive(_config_falsa(), sesion=graph)
+    assert len(fuente.listar().archivos) == 1
+    assert fuente.ruta_encontrada == "Documentos/2. DESARROLLOS_GITHUB/Documentos/AdamoPay_Datos"
+    assert "Documentos/2. DESARROLLOS_GITHUB" in fuente.descripcion()
+
+    graph.busqueda = []
+    with pytest.raises(ErrorFuente, match="Créela en la raíz"):
+        FuenteOneDrive(_config_falsa(), sesion=graph).listar()
+
+    graph.busqueda = [{"id": "a", "name": "AdamoPay_Datos", "folder": {}},
+                      {"id": "b", "name": "adamopay_datos", "folder": {}}]
+    with pytest.raises(ErrorFuente, match="Hay 2 carpetas"):
+        FuenteOneDrive(_config_falsa(), sesion=graph).listar()

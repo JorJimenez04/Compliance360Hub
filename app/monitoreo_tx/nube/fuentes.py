@@ -207,12 +207,14 @@ class FuenteOneDrive:
         self._refresh = refresh_token
         self.cuenta = cuenta
         self._al_renovar = al_renovar
+        self._carpeta_id: str | None = None      # se resuelve en la primera consulta
+        self.ruta_encontrada: str | None = None  # si la carpeta no estaba en la raíz
         if config.delegado and not refresh_token:
             raise ErrorConexion("OneDrive no está conectado: falta iniciar sesión.")
 
     def descripcion(self) -> str:
         dueño = self.cuenta or self.cfg.usuario or f"drive {self.cfg.drive_id}"
-        return f"OneDrive de {dueño} · /{self.cfg.carpeta.strip('/')}"
+        return f"OneDrive de {dueño} · /{(self.ruta_encontrada or self.cfg.carpeta).strip('/')}"
 
     # ---------- autenticación ----------
     def _cabeceras(self) -> dict:
@@ -252,7 +254,7 @@ class FuenteOneDrive:
         while url:
             r = self.http.get(url, headers=self._cabeceras(), timeout=self.timeout)
             if r.status_code == 404:
-                raise ErrorFuente(f"No se encontró la carpeta «{self.cfg.carpeta}» en el OneDrive configurado.")
+                raise _NoEncontrada(f"No se encontró la carpeta «{self.cfg.carpeta}» en el OneDrive configurado.")
             if r.status_code in (401, 403):
                 raise ErrorFuente(f"Sin permiso para leer el OneDrive ({r.status_code}): {_error_graph(r)}")
             if r.status_code != 200:
@@ -262,11 +264,49 @@ class FuenteOneDrive:
             url = datos.get("@odata.nextLink")
         return elementos
 
+    # ---------- ubicación de la carpeta ----------
+    def _id_carpeta(self) -> str:
+        """
+        Id de la carpeta raíz de los reportes. Primero se busca en la ruta
+        configurada (por defecto, la raíz del OneDrive); si no está, se busca por
+        nombre en todo el drive y se usa si hay exactamente una carpeta así
+        (p. ej. cuando OneDrive respalda «Documentos» y la carpeta quedó dentro).
+        """
+        if self._carpeta_id:
+            return self._carpeta_id
+        ruta = quote(self.cfg.carpeta.strip("/"))
+        r = self.http.get(f"{self._drive()}/root:/{ruta}?$select=id,name,folder",
+                          headers=self._cabeceras(), timeout=self.timeout)
+        if r.status_code == 200 and "folder" in r.json():
+            self._carpeta_id = r.json()["id"]
+            return self._carpeta_id
+        if r.status_code not in (200, 404):
+            raise ErrorFuente(f"Error de Microsoft Graph ({r.status_code}): {_error_graph(r)}")
+
+        nombre = self.cfg.carpeta.strip("/").split("/")[-1]
+        texto = nombre.replace("'", "''")
+        candidatos = [
+            i for i in self._get_todos(
+                f"{self._drive()}/root/search(q='{quote(texto)}')?$select=id,name,folder,parentReference&$top=50")
+            if "folder" in i and i.get("name", "").casefold() == nombre.casefold()
+        ]
+        rutas = [_ruta_legible(i) for i in candidatos]
+        if len(candidatos) == 1:
+            self._carpeta_id = candidatos[0]["id"]
+            self.ruta_encontrada = rutas[0]
+            logger.info("Carpeta «%s» encontrada fuera de la raíz: %s", nombre, rutas[0])
+            return self._carpeta_id
+        if not candidatos:
+            raise ErrorFuente(f"No se encontró la carpeta «{nombre}» en el OneDrive de "
+                              f"{self.cuenta or self.cfg.usuario or 'la cuenta configurada'}. Créela en la raíz "
+                              "de «Mis archivos» (o verifique el nombre).")
+        raise ErrorFuente(f"Hay {len(candidatos)} carpetas llamadas «{nombre}»: {'; '.join(rutas)}. Deje solo una, "
+                          "o indique la ruta exacta en la variable TX_ONEDRIVE_CARPETA.")
+
     # ---------- operaciones ----------
     def listar(self) -> Listado:
         campos = "$select=id,name,folder,file,size,lastModifiedDateTime,cTag,eTag&$top=200"
-        ruta = quote(self.cfg.carpeta.strip("/"))
-        raiz = self._get_todos(f"{self._drive()}/root:/{ruta}:/children?{campos}")
+        raiz = self._get_todos(f"{self._drive()}/items/{self._id_carpeta()}/children?{campos}")
         r = Listado()
         for item in sorted(raiz, key=lambda i: i.get("name", "").casefold()):
             nombre = item.get("name", "")
@@ -297,6 +337,18 @@ class FuenteOneDrive:
             raise ErrorFuente(f"No se pudo descargar {archivo.empresa}/{archivo.nombre} ({r.status_code})")
         destino.write_bytes(r.content)
         return destino
+
+
+class _NoEncontrada(ErrorFuente):
+    pass
+
+
+def _ruta_legible(item: dict) -> str:
+    """«Documentos/2. DESARROLLOS/AdamoPay_Datos» a partir de parentReference.path de Graph."""
+    padre = (item.get("parentReference") or {}).get("path") or ""
+    padre = padre.split("root:", 1)[-1].strip("/") if "root:" in padre else ""
+    from urllib.parse import unquote
+    return "/".join(p for p in (unquote(padre), item.get("name", "")) if p)
 
 
 def _fecha(valor: str | None) -> datetime | None:
