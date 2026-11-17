@@ -39,3 +39,6 @@ htmlcov/
 .vscode/
 .idea/
 *.code-workspace
+
+# ── Interfaz web (tiene su propio Dockerfile en web/) ─────────
+web/

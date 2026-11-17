@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+/* Compliance360 Hub — sistema de diseño (tema oscuro) */
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --color-fondo: #0a0b11;
+  --color-panel: #111520;
+  --color-panel-2: #171c2a;
+  --color-borde: #232a3b;
+  --color-borde-fuerte: #2f3850;
+  --color-texto: #eef1f6;
+  --color-texto-2: #a9b1c3;
+  --color-texto-3: #737c91;
+  --color-acento: #5fe9d0;
+  --color-acento-tenue: #5fe9d01f;
+  --color-acento-osc: #0f3d37;
+
+  /* Estado: siempre con ícono y texto, nunca solo color */
+  --color-ok: #34d399;
+  --color-alerta: #fbbf24;
+  --color-serio: #fb923c;
+  --color-critico: #f87171;
+
+  /* Series de gráficos (paleta categórica validada, modo oscuro) */
+  --color-serie-1: #3987e5;
+  --color-serie-2: #d95926;
+  --color-serie-3: #199e70;
+
+  --radius-tarjeta: 14px;
+}
+
+:root { color-scheme: dark; }
+
+html, body { background: var(--color-fondo); color: var(--color-texto); }
+body { font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; }
+
+.cifra { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-mono); font-size: 0.95em; }
+
+::selection { background: var(--color-acento-osc); color: var(--color-texto); }
+
+*:focus-visible { outline: 2px solid var(--color-acento); outline-offset: 2px; border-radius: 6px; }
+
+/* Barras de desplazamiento discretas */
+* { scrollbar-width: thin; scrollbar-color: var(--color-borde-fuerte) transparent; }
+
+/* Recharts: sin contorno al hacer clic */
+.recharts-wrapper *:focus { outline: none; }
