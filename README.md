@@ -61,7 +61,7 @@ python scripts/cargar_adamopay.py --archivo historial.csv --empresa "CM Group"
 ```
 
 **Carga automática desde OneDrive**: el servicio programado `sync-onedrive` de Railway
-(`railway.cron.toml`, variable `C360_TAREA=sincronizar_nube`) revisa cada hora la carpeta
+(Cron Schedule `0 0 * * *` en Settings: diario, 7 p. m. Colombia; variable `C360_TAREA=sincronizar_nube`) revisa la carpeta
 `AdamoPay_Datos` del OneDrive empresarial (una subcarpeta por empresa) y carga los CSV nuevos.
 Se configura con `TX_ONEDRIVE_TENANT_ID` y `TX_ONEDRIVE_CLIENT_ID` (registro de aplicación en
 Microsoft Entra ID con permisos delegados `Files.Read` y `offline_access`); el responsable conecta

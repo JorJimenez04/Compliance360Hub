@@ -3,7 +3,7 @@ scripts/sincronizar_nube.py
 ─────────────────────────────────────────────────────────────
 Revisa la carpeta de OneDrive y carga los reportes de AdamoPay nuevos o
 modificados (Monitoreo Transaccional). Lo ejecuta el servicio programado de
-Railway (railway.cron.toml); termina al acabar.
+Railway (servicio sync-onedrive, C360_TAREA=sincronizar_nube); termina al acabar.
 
 Uso:
     python scripts/sincronizar_nube.py                    # OneDrive (variables TX_ONEDRIVE_*)

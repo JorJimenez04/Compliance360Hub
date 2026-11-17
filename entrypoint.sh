@@ -5,8 +5,11 @@
 set -euo pipefail
 
 # ── 0. Servicio programado: carga automática desde OneDrive ──────
-# El servicio «sync-onedrive» (railway.cron.toml) usa esta misma imagen con
+# El servicio «sync-onedrive» de Railway usa esta misma imagen con
 # C360_TAREA=sincronizar_nube: aplica migraciones, revisa la carpeta y termina.
+# Su horario (Cron Schedule «0 0 * * *»: diario, 7 p. m. Colombia), sin healthcheck y con Restart
+# Policy «Never» se configuran en Settings del servicio (Config as Code de
+# Railway está obsoleto y los servicios nuevos no pueden usarlo).
 if [ "${C360_TAREA:-}" = "sincronizar_nube" ]; then
     python db/sync_db.py > /dev/null
     exec python scripts/sincronizar_nube.py

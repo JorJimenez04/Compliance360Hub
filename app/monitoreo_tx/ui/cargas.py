@@ -79,7 +79,7 @@ def _seccion_nube(user: dict) -> None:
         _conectar(user, reconectar=estado["conexion"] is not None)
     else:
         st.caption(f":material/cloud_sync: Carpeta: **{estado['descripcion']}**. Cada empresa en su "
-                   "subcarpeta; los CSV nuevos o modificados se cargan solos cada hora.")
+                   "subcarpeta; los CSV nuevos o modificados se cargan solos una vez al día. Para no esperar, use «Sincronizar ahora».")
         if estado["delegado"] and estado["conexion"]:
             c = estado["conexion"]
             st.caption(f"Conectado por {c['conectado_por']} el {formato_fecha_hora(c['conectado_en'])} · "
