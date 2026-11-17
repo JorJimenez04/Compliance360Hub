@@ -5,7 +5,6 @@ from app.utils.pdf_generator import (
     procesar_archivo_pdf,
     generar_pdf_base,
     compilar_expediente_completo,
-    resolver_ruta_logo,
     TIPO_PERSONA_JURIDICA,
     TIPO_PERSONA_NATURAL,
 )
@@ -638,13 +637,6 @@ def render_screening_workspace(user: dict):
             key="v6_evidencias_soportes",
             label_visibility="collapsed"
         )
-
-    # Mapeo de logos
-    missing_logos = []
-    if not resolver_ruta_logo("Logo Adamo general"): missing_logos.append("'Logo Adamo general'")
-    if not resolver_ruta_logo("Logo Holdings"): missing_logos.append("'Logo Holdings'")
-    if missing_logos:
-        st.warning(f"⚠️ Alerta de Identidad: No se detectan los archivos {', '.join(missing_logos)} en la ruta 'app/static/img/logos/'.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.button("⚡ Compilar y Validar Expediente de Caso", on_click=callback_ejecutar_compilacion, args=(user,), use_container_width=True)

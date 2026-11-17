@@ -1,6 +1,6 @@
 """
 app/main.py
-Entry point principal de AdamoServices Partner Manager.
+Entry point principal de Compliance360 Hub.
 Actualizado con métricas de gestión corporativa y operativa.
 """
 
@@ -69,27 +69,9 @@ class TabsCompliance:
 
     ALL = [MAPA, SCREENING, CRIPTO, BANDEJA]
 
-# ── Rutas de assets ──────────────────────────────────────────
-_STATIC_DIR   = Path(__file__).resolve().parent / "static"
-_LOGOS_DIR    = _STATIC_DIR / "img" / "logos"
-_IMG_FORMATS  = (".png", ".jpg", ".jpeg", ".webp", ".svg")
-
-def _get_logos() -> tuple[Path | None, Path | None]:
-    logo_sidebar = logo_icono = None
-    for ext in _IMG_FORMATS:
-        if not logo_sidebar and (_LOGOS_DIR / f"logo_adamo_blanco{ext}").exists():
-            logo_sidebar = _LOGOS_DIR / f"logo_adamo_blanco{ext}"
-        if not logo_icono and (_LOGOS_DIR / f"logo_adamo_color{ext}").exists():
-            logo_icono = _LOGOS_DIR / f"logo_adamo_color{ext}"
-    if not logo_sidebar and _LOGOS_DIR.exists():
-        all_imgs: list[Path] = sorted(p for ext in _IMG_FORMATS for p in _LOGOS_DIR.glob(f"*{ext}"))
-        if all_imgs: logo_sidebar = all_imgs[0]
-        if len(all_imgs) >= 2: logo_icono = all_imgs[1]
-    return logo_sidebar, logo_icono
-
 # ── Configuración de página ───────────────────────────────────
 st.set_page_config(
-    page_title="Adamo Services | Intelligence Hub",
+    page_title="Compliance360 Hub | Adamo Services",
     page_icon="🔹",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -643,27 +625,9 @@ def sidebar(user: dict) -> tuple[str, str | None]:
     """
     from app.components.agentes_ui import get_agentes_sidebar
 
-    _logo_sidebar, _logo_icono = _get_logos()
-    if _logo_icono:
-        try:
-            _icon_bytes = _logo_icono.read_bytes()
-            st.logo(
-                _logo_sidebar.read_bytes() if _logo_sidebar else _icon_bytes,
-                icon_image=_icon_bytes,
-                size="large",
-            )
-        except:
-            pass
-
     agente_seleccionado: str | None = None
 
     with st.sidebar:
-        if _logo_sidebar:
-            try:
-                st.image(_logo_sidebar.read_bytes(), width=220)
-            except:
-                pass
-
         st.markdown(
             f"<span style='display:inline-flex;align-items:center;gap:7px;"
             f"color:var(--fg-subtle,#9ca3af);font-size:0.82rem;'>"

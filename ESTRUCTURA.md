@@ -263,12 +263,11 @@ Proyecto_PartnersStatus/
 │   │   │                              # _tiempo_relativo(): formatea delta temporal (hace Xmin/h/d)
 │   │   │                              # Empresas: Holdings BPO · Adamo Services · Paycop
 │   │   ├── 📄 screening_ui.py         # 🔍 Screening y Debida Diligencia — generación PDF institucional
-│   │   │                              # ComplianceMaestroPDF (fpdf): doble logo + header/footer corporativo
+│   │   │                              # ComplianceMaestroPDF (fpdf): header/footer sin logos de marca
 │   │   │                              # parsear_texto_infolaft(): extrae nombre/ID/radicado/GAFI desde PDF Infolaft
 │   │   │                              # procesar_archivo_pdf(): PdfReader → parsear_texto_infolaft()
 │   │   │                              # render_resumen_validacion_ui(): microtarjeta "Certificado Limpio" / "⚠ Alerta"
 │   │   │                              # generar_pdf_consolidado(): PDF expediente con diseño Adamo + Holdings
-│   │   │                              # resolver_ruta_logo(): búsqueda multiplataforma en static/img/logos/
 │   │   │                              # Dependencias: pypdf (lectura) · fpdf2 (generación)
 │   │   └── 📄 agentes_ui.py           # Módulo INFORMATIVO de Equipos Operativos
 │   │                                  #   (gerencia / líderes de equipo — los agentes NO acceden al sistema)
@@ -317,7 +316,6 @@ Proyecto_PartnersStatus/
 │   │
 │   ├── 📂 static/
 │   │   └── 📂 img/
-│   │       ├── 📂 logos/              # Logos corporativos (logo_adamo_blanco.* / logo_adamo_color.*)
 │   │       └── 📂 agentes/            # Fotos de agentes — convención: <username>.(jpg|png|webp)
 │   │                                  # Se leen como bytes y se incrustan como data-URI base64
 │   │                                  # Agregar foto: copiar archivo y hacer git commit
@@ -838,9 +836,8 @@ Generación de expedientes PDF institucionales a partir de reportes Infolaft.
 - **`parsear_texto_infolaft()`**: extrae nombre, documento, radicado, fecha consulta, resultados y riesgo GAFI del texto PDF
 - **`procesar_archivo_pdf()`**: `pypdf.PdfReader` → texto → `parsear_texto_infolaft()`
 - **`render_resumen_validacion_ui()`**: microtarjeta *"✓ Certificado Limpio"* o *"⚠ Alerta Detectada"* según resultados
-- **`ComplianceMaestroPDF`** (`fpdf2`): doble logo simétrico (Adamo + Holdings) · header/footer corporativo · numeración de páginas
+- **`ComplianceMaestroPDF`** (`fpdf2`): header/footer sin logos de marca · numeración de páginas
 - **`generar_pdf_consolidado()`**: PDF expediente de debida diligencia con diseño institucional
-- **`resolver_ruta_logo()`**: búsqueda multiplataforma en `app/static/img/logos/`
 
 ---
 

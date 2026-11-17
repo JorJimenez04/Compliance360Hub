@@ -1,6 +1,6 @@
 """
 app/auth/login.py
-Sistema de autenticación de AdamoServices Partner Manager.
+Sistema de autenticación de Compliance360 Hub.
 
 Flujo:
   1. Verifica ADMIN_USERNAME / ADMIN_PASSWORD (ENV) — acceso de administración inicial.
@@ -15,44 +15,9 @@ import time
 import hmac
 import hashlib
 import json
-from pathlib import Path
 import streamlit as st
 from datetime import datetime, timedelta, timezone
 import extra_streamlit_components as stx
-
-# ── Rutas de logos (misma detección que main.py) ─────────────
-_LOGOS_DIR   = Path(__file__).resolve().parent.parent / "static" / "img" / "logos"
-_IMG_FORMATS = (".png", ".jpg", ".jpeg", ".webp", ".svg")
-
-
-def _get_logos() -> tuple[bytes | None, bytes | None]:
-    """
-    Retorna (logo_principal_bytes, logo_secundario_bytes).
-    Prioridad: nombres estándar → orden alfabético como fallback.
-    """
-    def _read(path: Path) -> bytes | None:
-        try:
-            return path.read_bytes()
-        except Exception:
-            return None
-
-    # 1. Nombres estándar
-    logo1 = logo2 = None
-    for ext in _IMG_FORMATS:
-        if not logo1 and (_LOGOS_DIR / f"logo_adamo_blanco{ext}").exists():
-            logo1 = _read(_LOGOS_DIR / f"logo_adamo_blanco{ext}")
-        if not logo2 and (_LOGOS_DIR / f"logo_adamo_color{ext}").exists():
-            logo2 = _read(_LOGOS_DIR / f"logo_adamo_color{ext}")
-
-    # 2. Fallback posicional
-    if not logo1 and _LOGOS_DIR.exists():
-        all_imgs = sorted(p for ext in _IMG_FORMATS for p in _LOGOS_DIR.glob(f"*{ext}"))
-        if all_imgs:
-            logo1 = _read(all_imgs[0])
-        if len(all_imgs) >= 2:
-            logo2 = _read(all_imgs[1])
-
-    return logo1, logo2
 
 # ── Constantes de rate-limiting ───────────────────────────────
 _MAX_FAILS       = 5   # intentos consecutivos antes de bloqueo
@@ -91,22 +56,6 @@ def _render_splash() -> None:
     Dura ~1 run (~200 ms) — oculta el formulario de login antes de que
     el CookieManager dispare el rerun automático con el valor real.
     """
-    logo1, _ = _get_logos()
-    logo_html = ""
-    if logo1:
-        if logo1[:4] == b'\x89PNG':
-            mime = "image/png"
-        elif logo1[:2] == b'\xff\xd8':
-            mime = "image/jpeg"
-        elif b'<svg' in logo1[:200]:
-            mime = "image/svg+xml"
-        else:
-            mime = "image/png"
-        src = f"data:{mime};base64,{base64.b64encode(logo1).decode()}"
-        logo_html = (
-            f'<img src="{src}" style="max-height:80px;max-width:240px;'
-            f'object-fit:contain;filter:brightness(0) invert(1);opacity:0.85;">'
-        )
     st.markdown(f"""
     <style>
     [data-testid="stHeader"],[data-testid="stToolbar"],
@@ -121,7 +70,6 @@ def _render_splash() -> None:
         justify-content:center;min-height:85vh;
         animation:splashFade 0.45s ease-out;
     }}
-    .splash-logo{{margin-bottom:36px;}}
     .splash-msg{{
         color:#5fe9d0;font-size:0.78rem;letter-spacing:2.5px;
         text-transform:uppercase;font-weight:600;
@@ -130,7 +78,6 @@ def _render_splash() -> None:
     }}
     </style>
     <div class="splash-wrap">
-        <div class="splash-logo">{logo_html}</div>
         <div class="splash-msg">🔐 &nbsp;Estableciendo conexión segura...</div>
     </div>
     """, unsafe_allow_html=True)
@@ -445,7 +392,6 @@ def login_screen() -> None:
 
     /* ── Fade-in del contenido de login ──────────────────────── */
     [data-testid="stForm"],
-    .login-logos-bar,
     .login-title-bar {
         animation: fadeInLogin 0.65s ease-out both;
     }
@@ -466,52 +412,6 @@ def login_screen() -> None:
         pointer-events: none;
         z-index: 0;
     }
-
-    /* ── Barra de logos ───────────────────────────────────── */
-    .login-logos-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 20px 0 18px;
-        background: transparent;
-        margin-bottom: 0;
-    }
-    .login-logos-bar .logo-slot {
-        display: flex;
-        align-items: center;
-        border-radius: 14px;
-        padding: 14px 24px;
-    }
-    .login-logos-bar .logo-slot:first-child { justify-content: flex-start; }
-    .login-logos-bar .logo-slot:last-child  { justify-content: flex-end; }
-
-    /* Logo Adamo — invertido a blanco sobre fondo oscuro */
-    .logo-slot:first-child {
-        background: transparent;
-        box-shadow: none;
-    }
-    .header-logo-adamo {
-        max-height: 120px;
-        max-width: 300px;
-        object-fit: contain;
-        filter: brightness(0) invert(1) drop-shadow(0 0 10px rgba(255,255,255,0.15));
-        transition: opacity 0.25s, transform 0.25s;
-    }
-    .header-logo-adamo:hover { opacity: 0.85; transform: scale(1.03); }
-
-    /* Logo Holdings BPO — colores originales, sin card */
-    .logo-slot:last-child {
-        background: transparent;
-        box-shadow: none;
-    }
-    .header-logo-holdings {
-        max-height: 120px;
-        max-width: 300px;
-        object-fit: contain;
-        filter: brightness(0) invert(1) drop-shadow(0 0 10px rgba(255,255,255,0.15));
-        transition: opacity 0.25s, transform 0.25s;
-    }
-    .header-logo-holdings:hover { opacity: 0.85; transform: scale(1.03); }
 
     /* ── Barra de título ──────────────────────────────────── */
     .login-title-bar {
@@ -670,41 +570,15 @@ def login_screen() -> None:
     @media (max-width: 640px) {
         [data-testid="stForm"] { padding: 24px 18px 20px !important; }
         .login-title-bar .app-title { font-size: 0.95rem; letter-spacing: 2px; }
-        .header-logo { max-height: 80px; max-width: 200px; }
-        .login-logos-bar .logo-slot { padding: 10px 14px; }
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # ── Cabecera con logos ────────────────────────────────────
-    logo1, logo2 = _get_logos()
-
-    def _b64_img(data: bytes | None) -> str:
-        if not data:
-            return ""
-        if data[:4] == b'\x89PNG':
-            mime = "image/png"
-        elif data[:2] == b'\xff\xd8':
-            mime = "image/jpeg"
-        elif b'<svg' in data[:200]:
-            mime = "image/svg+xml"
-        else:
-            mime = "image/png"
-        return f"data:{mime};base64,{base64.b64encode(data).decode()}"
-
-    src1 = _b64_img(logo1)
-    src2 = _b64_img(logo2)
-    logo1_tag = f'<img src="{src1}" class="header-logo header-logo-adamo" alt="Adamo">' if src1 else ""
-    logo2_tag = f'<img src="{src2}" class="header-logo header-logo-holdings" alt="Holdings BPO">' if src2 else ""
-
+    # ── Cabecera ──────────────────────────────────────────────
     st.markdown(f"""
-    <div class="login-logos-bar">
-        <div class="logo-slot">{logo1_tag}</div>
-        <div class="logo-slot">{logo2_tag}</div>
-    </div>
     <div class="login-title-bar">
-        <div class="app-title">Centro de Inteligencia Corporativa</div>
-        <div class="app-subtitle">Compliance, Data &amp; Technology Intelligent Hub</div>
+        <div class="app-title">Compliance360 Hub</div>
+        <div class="app-subtitle">Centro de Inteligencia Corporativa · Compliance, Data &amp; Technology</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -730,7 +604,7 @@ def login_screen() -> None:
 
         st.markdown("""
         <div class='login-footer'>
-            🔒 Conexión segura · Intelligence Hub - Operaciones Globales · AdamoServices S.A.S · 2026
+            🔒 Conexión segura · Compliance360 Hub · AdamoServices S.A.S · 2026
         </div>
         """, unsafe_allow_html=True)
 

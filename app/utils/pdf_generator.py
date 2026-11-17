@@ -35,11 +35,9 @@
 # ─────────────────────────────────────────────────────────────────────────
 
 import io
-import os
 import re
 import logging
 import unicodedata
-from pathlib import Path
 
 import pypdf
 from fpdf import FPDF
@@ -164,14 +162,12 @@ def _fmt(valor, vacio: str = SIN_DATO) -> str:
 # ══════════════════════════════════════════════════════════════════════
 
 class ComplianceMaestroPDF(FPDF):
-    """Estructura de diseño institucional con doble logo simétrico para HBPO-Adamo-Paycop."""
+    """Estructura de diseño institucional del expediente (sin logos de marca)."""
 
     TOP_MARGIN = 42.0
 
-    def __init__(self, logo_adamo=None, logo_holdings=None, tipo_persona=TIPO_PERSONA_JURIDICA):
+    def __init__(self, tipo_persona=TIPO_PERSONA_JURIDICA):
         super().__init__(orientation="P", unit="mm", format="A4")
-        self.logo_adamo = logo_adamo
-        self.logo_holdings = logo_holdings
         self.tipo_persona = tipo_persona
         self.set_margins(left=PAGE_X0, top=self.TOP_MARGIN, right=PAGE_X0)
         self.set_auto_page_break(auto=True, margin=MARGEN_INFERIOR)
@@ -219,12 +215,6 @@ class ComplianceMaestroPDF(FPDF):
 
     # ── plantilla ─────────────────────────────────────────────────────
     def header(self):
-        if self.logo_adamo and os.path.exists(self.logo_adamo):
-            self.image(self.logo_adamo, x=15, y=10, h=13)
-
-        if self.logo_holdings and os.path.exists(self.logo_holdings):
-            self.image(self.logo_holdings, x=163, y=10.5, h=12)
-
         titulo_doc = (
             "EXPEDIENTE DE DEBIDA DILIGENCIA INDIVIDUAL - PERSONA NATURAL / UBO"
             if self.tipo_persona == TIPO_PERSONA_NATURAL
@@ -232,8 +222,7 @@ class ComplianceMaestroPDF(FPDF):
         )
         self.set_xy(45, 11.5)
         self.set_text_color(*COLOR_PRIMARY)
-        # El canal central mide 115 mm entre los dos logos: si el título no
-        # cabe se reduce el cuerpo en lugar de invadir el logo de Holdings.
+        # El canal central mide 115 mm: si el título no cabe se reduce el cuerpo.
         for cuerpo in (9.0, 8.5, 8.0, 7.5):
             self.set_font("Helvetica", "B", cuerpo)
             if self.get_string_width(titulo_doc) <= 114:
@@ -757,36 +746,6 @@ def _resolver_nombre_entidad(ent: dict, datos_master: dict) -> tuple:
 
 
 # ══════════════════════════════════════════════════════════════════════
-# LOGOS
-# ══════════════════════════════════════════════════════════════════════
-
-def resolver_ruta_logo(nombre_base: str) -> str:
-    """Busca el logo relativo al módulo (no al cwd) y de forma determinista."""
-    base_modulo = Path(__file__).resolve()
-    candidatos = []
-    for parent in base_modulo.parents[:4]:
-        candidatos.append(parent / "app" / "static" / "img" / "logos")
-        candidatos.append(parent / "static" / "img" / "logos")
-    candidatos.append(Path("app") / "static" / "img" / "logos")
-    candidatos.append(Path("static") / "img" / "logos")
-
-    prefijos = {
-        nombre_base.lower(),
-        nombre_base.lower().replace(" ", "_"),
-        nombre_base.lower().replace(" ", "-"),
-    }
-
-    for carpeta in candidatos:
-        if not carpeta.is_dir():
-            continue
-        # sorted() -> el mismo logo siempre; os.listdir no garantiza orden.
-        for archivo in sorted(p.name for p in carpeta.iterdir() if p.is_file()):
-            if any(archivo.lower().startswith(p) for p in prefijos):
-                return str(carpeta / archivo)
-    return None
-
-
-# ══════════════════════════════════════════════════════════════════════
 # GENERACIÓN DEL EXPEDIENTE
 # ══════════════════════════════════════════════════════════════════════
 
@@ -799,15 +758,12 @@ def generar_pdf_base(datos_master: dict) -> bytes:
     # completa de administración exigida en el Onboarding Formal SARLAFT.
     es_prospecto = bool(datos_master.get("modo_prospecto", False))
 
-    path_adamo = resolver_ruta_logo("Logo Adamo general")
-    path_holdings = resolver_ruta_logo("Logo Holdings")
-
-    pdf = ComplianceMaestroPDF(logo_adamo=path_adamo, logo_holdings=path_holdings, tipo_persona=tipo_persona)
+    pdf = ComplianceMaestroPDF(tipo_persona=tipo_persona)
 
     # Metadatos: cadena de custodia mínima del documento probatorio.
     pdf.set_title(f"Expediente de Debida Diligencia - {datos_master.get('radicado_caso', 'S/N')}")
-    pdf.set_author("HBPO Compliance Hub")
-    pdf.set_creator("PayShield & Compliance Hub")
+    pdf.set_author("Compliance360 Hub")
+    pdf.set_creator("Compliance360 Hub")
     pdf.set_subject("Verificación SARLAFT / Screening en listas de control")
 
     pdf.alias_nb_pages()
