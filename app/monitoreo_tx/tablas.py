@@ -85,3 +85,44 @@ clientes = Table(
     Column("nivel_riesgo", Text),
     Column("estado", Text),
 )
+
+tx_revisiones_nube = Table(
+    "tx_revisiones_nube", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("origen", Text, nullable=False),
+    Column("iniciado_en", DateTime, nullable=False),
+    Column("finalizado_en", DateTime),
+    Column("resultado", String(12), nullable=False),
+    Column("usuario", Text),
+    Column("archivos_vistos", Integer),
+    Column("archivos_nuevos", Integer),
+    Column("cargados", Integer),
+    Column("errores", Integer),
+    Column("mensaje", Text),
+)
+
+tx_archivos_nube = Table(
+    "tx_archivos_nube", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("origen", Text, nullable=False),
+    Column("item_id", Text, nullable=False),
+    Column("version", Text, nullable=False),
+    Column("empresa", Text, nullable=False),
+    Column("nombre", Text, nullable=False),
+    Column("tamano", BigInteger),
+    Column("modificado_en", DateTime),
+    Column("procesado_en", DateTime, nullable=False),
+    Column("resultado", String(10), nullable=False),
+    Column("revision_id", Integer),
+    Column("mensaje", Text),
+)
+
+tx_credenciales_nube = Table(
+    "tx_credenciales_nube", metadata,
+    Column("origen", Text, primary_key=True),
+    Column("cuenta", Text),
+    Column("token_cifrado", Text, nullable=False),
+    Column("conectado_por", Text, nullable=False),
+    Column("conectado_en", DateTime, nullable=False),
+    Column("renovado_en", DateTime, nullable=False),
+)

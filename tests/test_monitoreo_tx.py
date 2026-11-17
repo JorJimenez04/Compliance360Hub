@@ -398,3 +398,240 @@ def test_sincronizacion_registra_la_completitud(excel, tmp_path, engine_pg):
     assert any("Cliente A" in adv and "faltante" in adv for adv in r.advertencias)
     fila = SincronizacionesRepo(engine_pg).listar(1)[0]
     assert fila["faltantes"] == 1 and "Cliente A" in fila["verificacion"]
+
+
+# ---------- Carga automática desde la nube ----------
+class _Resp:
+    def __init__(self, status, datos=None, contenido=b""):
+        self.status_code, self._datos, self.content, self.text = status, datos, contenido, ""
+
+    def json(self):
+        return self._datos
+
+
+class _GraphFalso:
+    """Simula Microsoft Graph: token, carpeta raíz paginada, subcarpetas y descarga."""
+
+    def __init__(self, csv: bytes):
+        self.csv, self.llamadas = csv, []
+
+    def post(self, url, data=None, timeout=None):
+        self.llamadas.append(("POST", url))
+        assert data["grant_type"] == "client_credentials"
+        return _Resp(200, {"access_token": "tok", "expires_in": 3600})
+
+    def get(self, url, headers=None, timeout=None, allow_redirects=True):
+        self.llamadas.append(("GET", url))
+        assert headers["Authorization"] == "Bearer tok"
+        if "root:/AdamoPay_Datos:/children" in url:
+            return _Resp(200, {"value": [{"id": "f1", "name": "Cliente A", "folder": {}}],
+                               "@odata.nextLink": "https://graph.microsoft.com/v1.0/pagina2"})
+        if url.endswith("/pagina2"):
+            return _Resp(200, {"value": [{"id": "s1", "name": "suelto.csv", "file": {}},
+                                         {"id": "f2", "name": "_descartados", "folder": {}}]})
+        if "/items/f1/children" in url:
+            return _Resp(200, {"value": [
+                {"id": "c1", "name": "2026-11-12_historial.csv", "file": {}, "size": len(self.csv),
+                 "cTag": "v1", "lastModifiedDateTime": "2026-11-12T22:00:00Z"},
+                {"id": "x1", "name": "notas.docx", "file": {}, "cTag": "v1"},
+            ]})
+        if "/items/c1/content" in url:
+            return _Resp(200, contenido=self.csv)
+        return _Resp(404, {"error": {"message": "no existe"}})
+
+
+def _config_falsa():
+    from app.monitoreo_tx.nube.fuentes import ConfigOneDrive
+    return ConfigOneDrive(tenant_id="t", client_id="c", client_secret="s", usuario="jorge@empresa.co")
+
+
+def test_onedrive_lista_subcarpetas_pagina_e_ignora_lo_que_no_aplica(tmp_path):
+    from app.monitoreo_tx.nube.fuentes import FuenteOneDrive
+
+    graph = _GraphFalso(CSV_CLIENTE.encode("utf-8-sig"))
+    fuente = FuenteOneDrive(_config_falsa(), sesion=graph)
+    listado = fuente.listar()
+    assert [(a.empresa, a.nombre, a.version) for a in listado.archivos] == [
+        ("Cliente A", "2026-11-12_historial.csv", "v1")]
+    assert listado.sueltos == ["suelto.csv"]                  # sin empresa: no se carga
+    assert listado.ignorados == ["Cliente A/notas.docx"]       # formato no admitido
+    assert not any("/items/f2/" in u for _, u in graph.llamadas)   # _descartados no se recorre
+    assert sum(1 for m, _ in graph.llamadas if m == "POST") == 1   # el token se reutiliza
+    destino = fuente.descargar(listado.archivos[0], tmp_path / "x.csv")
+    assert destino.read_bytes() == graph.csv
+
+
+def test_onedrive_credenciales_rechazadas_dan_error_claro():
+    from app.monitoreo_tx.nube.fuentes import ErrorFuente, FuenteOneDrive
+
+    class _Rechazo(_GraphFalso):
+        def post(self, url, data=None, timeout=None):
+            return _Resp(401, {"error_description": "AADSTS7000215: Invalid client secret"})
+
+    with pytest.raises(ErrorFuente, match="credenciales"):
+        FuenteOneDrive(_config_falsa(), sesion=_Rechazo(b"")).listar()
+
+
+def test_configuracion_onedrive_desde_entorno(monkeypatch):
+    from app.monitoreo_tx.nube.fuentes import ConfigOneDrive
+    for k in ("TX_ONEDRIVE_TENANT_ID", "TX_ONEDRIVE_CLIENT_ID", "TX_ONEDRIVE_CLIENT_SECRET",
+              "TX_ONEDRIVE_USUARIO", "TX_ONEDRIVE_DRIVE_ID", "TX_ONEDRIVE_CARPETA"):
+        monkeypatch.delenv(k, raising=False)
+    assert ConfigOneDrive.desde_entorno() is None
+    monkeypatch.setenv("TX_ONEDRIVE_TENANT_ID", "t")
+    monkeypatch.setenv("TX_ONEDRIVE_CLIENT_ID", "c")
+    cfg = ConfigOneDrive.desde_entorno()
+    assert cfg.delegado and cfg.carpeta == "AdamoPay_Datos"   # sin secreto: inicio de sesión con código
+    monkeypatch.setenv("TX_ONEDRIVE_CLIENT_SECRET", "s")
+    assert ConfigOneDrive.desde_entorno() is None            # modo aplicación: falta el dueño del drive
+    monkeypatch.setenv("TX_ONEDRIVE_USUARIO", "jorge@empresa.co")
+    cfg = ConfigOneDrive.desde_entorno()
+    assert not cfg.delegado and cfg.usuario == "jorge@empresa.co"
+
+
+@pytest.fixture
+def engine_pg_nube(engine_pg):
+    from sqlalchemy import text
+    migracion = pathlib.Path(__file__).resolve().parent.parent / "db" / "migrations" / "036_tx_sincronizacion_nube.sql"
+    with engine_pg.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS tx_archivos_nube, tx_revisiones_nube, tx_credenciales_nube CASCADE"))
+        conn.execute(text(migracion.read_text(encoding="utf-8")))
+    return engine_pg
+
+
+def test_revision_carga_lo_nuevo_una_sola_vez(tmp_path, engine_pg_nube):
+    from app.monitoreo_tx.nube.fuentes import FuenteOneDrive
+    from app.monitoreo_tx.nube.sincronizacion import revisar, ultimas_revisiones, ultimos_archivos
+    from app.monitoreo_tx.repositorio import TransaccionesRepo
+
+    graph = _GraphFalso(CSV_CLIENTE.encode("utf-8-sig"))
+    fuente = FuenteOneDrive(_config_falsa(), sesion=graph)
+
+    r1 = revisar(fuente, engine_pg_nube)
+    assert (r1.resultado, r1.archivos_vistos, r1.archivos_nuevos, r1.cargados) == ("OK", 1, 1, 1)
+    # El CSV sintético no trae saldos encadenados: la verificación lo señala (y no hay huecos)
+    assert r1.archivos[0].completitud.startswith("0 faltante")
+    assert TransaccionesRepo(engine_pg_nube).conteo_por_cliente() == {"Cliente A": 4}
+    assert "suelto" in r1.mensaje
+
+    # Misma versión: no se vuelve a descargar
+    descargas = sum(1 for _, u in graph.llamadas if u.endswith("/content"))
+    r2 = revisar(fuente, engine_pg_nube)
+    assert (r2.archivos_nuevos, r2.cargados) == (0, 0)
+    assert sum(1 for _, u in graph.llamadas if u.endswith("/content")) == descargas
+
+    assert [x["resultado"] for x in ultimas_revisiones(engine_pg_nube)] == ["OK", "OK"]
+    assert ultimos_archivos(engine_pg_nube)[0]["empresa"] == "Cliente A"
+
+
+def test_revision_registra_error_de_un_archivo_y_sigue(tmp_path, engine_pg_nube):
+    from app.monitoreo_tx.nube.fuentes import FuenteCarpeta
+    from app.monitoreo_tx.nube.sincronizacion import revisar
+
+    (tmp_path / "datos" / "Cliente A").mkdir(parents=True)
+    (tmp_path / "datos" / "Cliente B").mkdir(parents=True)
+    (tmp_path / "datos" / "Cliente A" / "malo.csv").write_text("esto no es un historial", encoding="utf-8")
+    (tmp_path / "datos" / "Cliente B" / "bueno.csv").write_bytes(CSV_CLIENTE.encode("utf-8-sig"))
+    r = revisar(FuenteCarpeta(tmp_path / "datos"), engine_pg_nube)
+    assert r.resultado == "CON_ERRORES" and r.errores == 1 and r.cargados == 1
+    assert {x.empresa: x.resultado for x in r.archivos} == {"Cliente A": "ERROR", "Cliente B": "OK"}
+
+
+def test_dos_revisiones_no_corren_a_la_vez(tmp_path, engine_pg_nube):
+    from sqlalchemy import text
+    from app.monitoreo_tx.nube.fuentes import FuenteCarpeta
+    from app.monitoreo_tx.nube.sincronizacion import LLAVE_BLOQUEO, revisar
+
+    (tmp_path / "vacia").mkdir()
+    with engine_pg_nube.connect() as otra:
+        otra.execute(text("SELECT pg_advisory_lock(:k)"), {"k": LLAVE_BLOQUEO})
+        assert revisar(FuenteCarpeta(tmp_path / "vacia"), engine_pg_nube).resultado == "EN_CURSO"
+        otra.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": LLAVE_BLOQUEO})
+    assert revisar(FuenteCarpeta(tmp_path / "vacia"), engine_pg_nube).resultado == "OK"
+
+
+
+# ---------- Modo delegado: inicio de sesión con código ----------
+class _GraphDelegado(_GraphFalso):
+    """Como _GraphFalso, pero con device code, refresh token rotativo y /me."""
+
+    def __init__(self, csv: bytes):
+        super().__init__(csv)
+        self.refresh_vigente = "r1"
+        self.pendiente = True
+
+    def post(self, url, data=None, timeout=None):
+        self.llamadas.append(("POST", url))
+        if url.endswith("/devicecode"):
+            assert "offline_access" in data["scope"] and "Files.Read" in data["scope"]
+            return _Resp(200, {"device_code": "dc", "user_code": "ABCD-1234",
+                               "verification_uri": "https://microsoft.com/devicelogin", "expires_in": 900})
+        if data["grant_type"].endswith("device_code"):
+            if self.pendiente:
+                return _Resp(400, {"error": "authorization_pending"})
+            return _Resp(200, {"access_token": "tok", "refresh_token": "r1", "expires_in": 3600})
+        assert data["grant_type"] == "refresh_token" and "client_secret" not in data
+        if data["refresh_token"] != self.refresh_vigente:
+            return _Resp(400, {"error": "invalid_grant", "error_description": "AADSTS70008: expired"})
+        self.refresh_vigente = "r2"           # Microsoft rota el refresh token
+        return _Resp(200, {"access_token": "tok", "refresh_token": "r2", "expires_in": 3600})
+
+    def get(self, url, headers=None, timeout=None, allow_redirects=True):
+        if "/me?" in url:
+            return _Resp(200, {"userPrincipalName": "jorge@holdingsbpo.co"})
+        # modo delegado: solo el drive del usuario conectado (las páginas siguientes las da Graph)
+        assert "/me/drive" in url or url.endswith("/pagina2")
+        return super().get(url.replace("/me/drive", "/users/x/drive"), headers, timeout, allow_redirects)
+
+
+def test_conexion_con_codigo_espera_y_luego_entrega_la_cuenta():
+    from app.monitoreo_tx.nube.fuentes import ConfigOneDrive, completar_conexion, iniciar_conexion
+
+    cfg = ConfigOneDrive(tenant_id="t", client_id="c")
+    graph = _GraphDelegado(b"")
+    flujo = iniciar_conexion(cfg, graph)
+    assert flujo["user_code"] == "ABCD-1234"
+    assert completar_conexion(cfg, flujo["device_code"], graph) is None      # aún no inicia sesión
+    graph.pendiente = False
+    r = completar_conexion(cfg, flujo["device_code"], graph)
+    assert (r["refresh_token"], r["cuenta"]) == ("r1", "jorge@holdingsbpo.co")
+
+
+def test_delegado_lee_me_drive_y_guarda_el_token_rotado():
+    from app.monitoreo_tx.nube.fuentes import ConfigOneDrive, ErrorConexion, FuenteOneDrive
+
+    cfg = ConfigOneDrive(tenant_id="t", client_id="c")
+    graph = _GraphDelegado(CSV_CLIENTE.encode("utf-8-sig"))
+    guardados = []
+    fuente = FuenteOneDrive(cfg, sesion=graph, refresh_token="r1", cuenta="jorge@holdingsbpo.co",
+                            al_renovar=guardados.append)
+    assert len(fuente.listar().archivos) == 1
+    assert guardados == ["r2"]                       # el nuevo refresh token se guarda
+    assert "jorge@holdingsbpo.co" in fuente.descripcion()
+
+    with pytest.raises(ErrorConexion):               # sin conexión no se puede crear la fuente
+        FuenteOneDrive(cfg, sesion=graph)
+    vencida = FuenteOneDrive(cfg, sesion=graph, refresh_token="viejo")
+    with pytest.raises(ErrorConexion, match="vuelva a conectar"):
+        vencida.listar()
+
+
+def test_credencial_se_guarda_cifrada_y_se_renueva(engine_pg_nube, monkeypatch):
+    from sqlalchemy import text
+    from app.monitoreo_tx.nube import credenciales
+
+    monkeypatch.setenv("SECRET_KEY", "x" * 43)
+    credenciales.guardar(engine_pg_nube, "refresh-secreto", "jorge@holdingsbpo.co", "jorge")
+    with engine_pg_nube.connect() as conn:
+        crudo = conn.execute(text("SELECT token_cifrado FROM tx_credenciales_nube")).scalar()
+    assert "refresh-secreto" not in crudo                                    # no queda en claro
+    assert credenciales.leer(engine_pg_nube)["refresh_token"] == "refresh-secreto"
+
+    credenciales.renovar(engine_pg_nube, "refresh-nuevo")
+    assert credenciales.leer(engine_pg_nube)["refresh_token"] == "refresh-nuevo"
+
+    monkeypatch.setenv("SECRET_KEY", "y" * 43)                               # otra clave: no se puede leer
+    assert credenciales.leer(engine_pg_nube) is None
+    assert credenciales.info(engine_pg_nube)["cuenta"] == "jorge@holdingsbpo.co"
+    credenciales.eliminar(engine_pg_nube)
+    assert credenciales.info(engine_pg_nube) is None

@@ -60,6 +60,16 @@ python scripts/cargar_adamopay.py --archivo reporte.xlsx --db "<DATABASE_PUBLIC_
 python scripts/cargar_adamopay.py --archivo historial.csv --empresa "CM Group"
 ```
 
+**Carga automática desde OneDrive**: el servicio programado `sync-onedrive` de Railway
+(`railway.cron.toml`, variable `C360_TAREA=sincronizar_nube`) revisa cada hora la carpeta
+`AdamoPay_Datos` del OneDrive empresarial (una subcarpeta por empresa) y carga los CSV nuevos.
+Se configura con `TX_ONEDRIVE_TENANT_ID` y `TX_ONEDRIVE_CLIENT_ID` (registro de aplicación en
+Microsoft Entra ID con permisos delegados `Files.Read` y `offline_access`); el responsable conecta
+su OneDrive una vez desde Cargas → «Conectar OneDrive» (inicio de sesión con código) y el acceso
+queda cifrado con `SECRET_KEY`. El servicio programado necesita la misma `SECRET_KEY`.
+Alternativa con administrador: `TX_ONEDRIVE_CLIENT_SECRET` + `TX_ONEDRIVE_USUARIO` y `Files.Read.All`.
+Prueba sin cargar: `python scripts/sincronizar_nube.py --listar`.
+
 Pruebas de sincronización contra PostgreSQL (la base indicada se vacía):
 `$env:TX_TEST_PG_URL = "postgresql://adamo:adamo_dev_2026@localhost:5432/tx_test"`.
 

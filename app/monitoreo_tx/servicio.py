@@ -192,6 +192,76 @@ class MonitoreoService:
         )
         return resumen
 
+    # ---------- Carga automática desde OneDrive ----------
+    def estado_nube(self, user: dict) -> dict:
+        """Configuración, conexión, últimas revisiones y últimos archivos procesados."""
+        _exigir(user, ROLES_MONITOREO)
+        from app.monitoreo_tx.nube import credenciales
+        from app.monitoreo_tx.nube.fuentes import ConfigOneDrive, fuente_configurada
+        from app.monitoreo_tx.nube.sincronizacion import ultimas_revisiones, ultimos_archivos
+        cfg = ConfigOneDrive.desde_entorno()
+        conexion = credenciales.info(self.engine) if cfg and cfg.delegado else None
+        fuente = fuente_configurada(self.engine) if cfg else None
+        return {
+            "configurada": cfg is not None,
+            "delegado": bool(cfg and cfg.delegado),
+            "conexion": conexion,               # modo delegado: quién se conectó y cuándo
+            "lista": fuente is not None,        # se puede revisar ya
+            "descripcion": fuente.descripcion() if fuente else None,
+            "revisiones": ultimas_revisiones(self.engine, 10),
+            "archivos": ultimos_archivos(self.engine, 30),
+        }
+
+    def iniciar_conexion_onedrive(self, user: dict) -> dict:
+        """Pide a Microsoft el código para conectar (modo delegado)."""
+        _exigir(user, ROLES_CARGA)
+        from app.monitoreo_tx.domain.errores import ErrorValidacion
+        from app.monitoreo_tx.nube.fuentes import ConfigOneDrive, iniciar_conexion
+        cfg = ConfigOneDrive.desde_entorno()
+        if cfg is None or not cfg.delegado:
+            raise ErrorValidacion("La conexión con código no está configurada en el servidor "
+                                  "(TX_ONEDRIVE_TENANT_ID y TX_ONEDRIVE_CLIENT_ID, sin secreto).")
+        return iniciar_conexion(cfg)
+
+    def completar_conexion_onedrive(self, user: dict, device_code: str) -> dict | None:
+        """None si el usuario aún no termina de iniciar sesión; si terminó, guarda la conexión."""
+        _exigir(user, ROLES_CARGA)
+        from app.monitoreo_tx.nube import credenciales
+        from app.monitoreo_tx.nube.fuentes import ConfigOneDrive, completar_conexion
+        cfg = ConfigOneDrive.desde_entorno()
+        resultado = completar_conexion(cfg, device_code)
+        if resultado is None:
+            return None
+        if not resultado.get("refresh_token"):
+            from app.monitoreo_tx.domain.errores import ErrorValidacion
+            raise ErrorValidacion("Microsoft no entregó un acceso permanente: verifique que la aplicación "
+                                  "tenga el permiso offline_access.")
+        credenciales.guardar(self.engine, resultado["refresh_token"], resultado["cuenta"],
+                             user.get("username", "desconocido"))
+        registrar_auditoria(user, "CREATE", f"Monitoreo TX: OneDrive conectado con la cuenta {resultado['cuenta']}",
+                            entidad="tx_credenciales_nube")
+        return {"cuenta": resultado["cuenta"]}
+
+    def desconectar_onedrive(self, user: dict) -> None:
+        _exigir(user, ROLES_CARGA)
+        from app.monitoreo_tx.nube import credenciales
+        credenciales.eliminar(self.engine)
+        registrar_auditoria(user, "DELETE", "Monitoreo TX: OneDrive desconectado", entidad="tx_credenciales_nube")
+
+    def sincronizar_nube_ahora(self, user: dict):
+        """Revisión manual («Sincronizar ahora»), con el mismo proceso que la programada."""
+        _exigir(user, ROLES_CARGA)
+        from app.monitoreo_tx.domain.errores import ErrorValidacion
+        from app.monitoreo_tx.nube.fuentes import fuente_configurada
+        from app.monitoreo_tx.nube.sincronizacion import revisar
+        fuente = fuente_configurada(self.engine)
+        if fuente is None:
+            raise ErrorValidacion("OneDrive no está configurado o no está conectado.")
+        resumen = revisar(fuente, self.engine, usuario=user.get("username", "manual"))
+        registrar_auditoria(user, "CREATE", f"Monitoreo TX: sincronización manual con OneDrive · "
+                                            f"{resumen.resultado} · {resumen.mensaje}"[:900])
+        return resumen
+
     def bitacora(self, user: dict, limite: int = 50) -> list[dict]:
         _exigir(user, ROLES_MONITOREO)
         return self.sincronizaciones.listar(limite)

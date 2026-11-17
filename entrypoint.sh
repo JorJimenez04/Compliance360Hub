@@ -4,6 +4,14 @@
 # Usado por Docker/Railway como punto de entrada del contenedor.
 set -euo pipefail
 
+# ── 0. Servicio programado: carga automática desde OneDrive ──────
+# El servicio «sync-onedrive» (railway.cron.toml) usa esta misma imagen con
+# C360_TAREA=sincronizar_nube: aplica migraciones, revisa la carpeta y termina.
+if [ "${C360_TAREA:-}" = "sincronizar_nube" ]; then
+    python db/sync_db.py > /dev/null
+    exec python scripts/sincronizar_nube.py
+fi
+
 # ── 1. Verificación de variables críticas (solo en producción) ────
 APP_ENV="${APP_ENV:-development}"
 if [ "$APP_ENV" = "production" ]; then
