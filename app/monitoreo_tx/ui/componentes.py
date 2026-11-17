@@ -13,7 +13,7 @@ import html
 import pandas as pd
 import streamlit as st
 
-from app.monitoreo_tx.domain.errores import ErrorDominio, ErrorValidacion
+from core.monitoreo_tx.domain.errores import ErrorDominio, ErrorValidacion
 
 _CSS = """
 <style>

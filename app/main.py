@@ -62,7 +62,7 @@ ROLES_COMPLIANCE = {"admin", "compliance", "super_admin"}
 
 # ── Módulo Monitoreo Transaccional ────────────────────────────
 # Los roles viven en el módulo para que pantalla y servicio usen la misma regla.
-from app.monitoreo_tx.config import ROLES_MONITOREO  # noqa: E402
+from core.monitoreo_tx.config import ROLES_MONITOREO  # noqa: E402
 
 
 class TabsCompliance:

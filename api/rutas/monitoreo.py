@@ -1,7 +1,7 @@
 """
 Monitoreo Transaccional: endpoints para el nuevo frontend.
 
-Toda la lógica vive en app/monitoreo_tx/servicio.py (la misma que usa la
+Toda la lógica vive en core/monitoreo_tx/servicio.py (la misma que usa la
 interfaz Streamlit): aquí solo se traducen peticiones y respuestas, y los
 permisos se vuelven a validar en el servicio.
 """
@@ -22,12 +22,12 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from api import seguridad as seg
-from app.monitoreo_tx.config import ROLES_CARGA, ROLES_MONITOREO
-from app.monitoreo_tx.domain import metricas
-from app.monitoreo_tx.domain.entidades import FiltrosTransacciones
-from app.monitoreo_tx.domain.errores import ErrorDominio, NoEncontrado, PermisoDenegado
-from app.monitoreo_tx.servicio import registrar_auditoria, servicio
-from app.monitoreo_tx.ui.formato import enmascarar
+from core.monitoreo_tx.config import ROLES_CARGA, ROLES_MONITOREO
+from core.monitoreo_tx.domain import metricas
+from core.monitoreo_tx.domain.entidades import FiltrosTransacciones
+from core.monitoreo_tx.domain.errores import ErrorDominio, NoEncontrado, PermisoDenegado
+from core.monitoreo_tx.servicio import registrar_auditoria, servicio
+from core.monitoreo_tx.formato import enmascarar
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/monitoreo", tags=["monitoreo transaccional"])
@@ -348,7 +348,7 @@ def nube(u: seg.Usuario = Depends(ver)) -> dict:
 
 @router.post("/nube/sincronizar")
 def sincronizar(u: seg.Usuario = Depends(cargar)) -> dict:
-    from app.monitoreo_tx.nube.fuentes import ErrorFuente
+    from core.monitoreo_tx.nube.fuentes import ErrorFuente
     try:
         r = servicio().sincronizar_nube_ahora(u.como_dict())
     except ErrorDominio as e:

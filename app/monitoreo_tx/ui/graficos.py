@@ -15,7 +15,7 @@ import math
 import pandas as pd
 import plotly.graph_objects as go
 
-from app.monitoreo_tx.ui.formato import MESES, etiqueta_periodo, formato_cop, formato_entero, formato_porcentaje
+from core.monitoreo_tx.formato import MESES, etiqueta_periodo, formato_cop, formato_entero, formato_porcentaje
 
 # Paleta para el tema oscuro de Compliance360 Hub (.streamlit/config.toml)
 AZUL = "#5fe9d0"

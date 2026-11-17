@@ -26,11 +26,11 @@ import pandas as pd
 from sqlalchemy import Connection, Engine, delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.monitoreo_tx.config import SYNC_LOG_DIR
-from app.monitoreo_tx.domain.continuidad import verificar_continuidad
-from app.monitoreo_tx.etl.excel_loader import leer_archivo
-from app.monitoreo_tx.repositorio import TransaccionesRepo, registrar_empresas_faltantes
-from app.monitoreo_tx.tablas import tx_sincronizaciones, tx_transacciones
+from core.monitoreo_tx.config import SYNC_LOG_DIR
+from core.monitoreo_tx.domain.continuidad import verificar_continuidad
+from core.monitoreo_tx.etl.excel_loader import leer_archivo
+from core.monitoreo_tx.repositorio import TransaccionesRepo, registrar_empresas_faltantes
+from core.monitoreo_tx.tablas import tx_sincronizaciones, tx_transacciones
 
 logger = logging.getLogger(__name__)
 

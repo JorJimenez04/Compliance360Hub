@@ -15,10 +15,10 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from app.monitoreo_tx.domain.errores import ErrorDominio
-from app.monitoreo_tx.servicio import puede_cargar, servicio
+from core.monitoreo_tx.domain.errores import ErrorDominio
+from core.monitoreo_tx.servicio import puede_cargar, servicio
 from app.monitoreo_tx.ui.componentes import mostrar_error
-from app.monitoreo_tx.ui.formato import formato_entero, formato_fecha_hora
+from core.monitoreo_tx.formato import formato_entero, formato_fecha_hora
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ def _seccion_nube(user: dict) -> None:
 
 
 def _sincronizar_ahora(user: dict) -> None:
-    from app.monitoreo_tx.nube.fuentes import ErrorConexion
+    from core.monitoreo_tx.nube.fuentes import ErrorConexion
     try:
         with st.spinner("Revisando OneDrive y cargando archivos nuevos…"):
             r = servicio().sincronizar_nube_ahora(user)

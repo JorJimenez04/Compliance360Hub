@@ -20,15 +20,15 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy import Engine
 
-from app.monitoreo_tx.characterization.base_characterization import caracterizar_cliente_gafi
-from app.monitoreo_tx.config import ROLES_CARGA, ROLES_MONITOREO
-from app.monitoreo_tx.domain import metricas
-from app.monitoreo_tx.domain.continuidad import Continuidad, verificar_continuidad
-from app.monitoreo_tx.domain.entidades import EmpresaVista, FiltrosTransacciones, OpcionesFiltro
-from app.monitoreo_tx.domain.errores import NoEncontrado, PermisoDenegado
-from app.monitoreo_tx.etl.sync import ResumenSincronizacion, sincronizar
-from app.monitoreo_tx.repositorio import EmpresasRepo, SincronizacionesRepo, TransaccionesRepo
-from app.monitoreo_tx.risk_analysis import analizar_riesgo_cliente
+from core.monitoreo_tx.characterization.base_characterization import caracterizar_cliente_gafi
+from core.monitoreo_tx.config import ROLES_CARGA, ROLES_MONITOREO
+from core.monitoreo_tx.domain import metricas
+from core.monitoreo_tx.domain.continuidad import Continuidad, verificar_continuidad
+from core.monitoreo_tx.domain.entidades import EmpresaVista, FiltrosTransacciones, OpcionesFiltro
+from core.monitoreo_tx.domain.errores import NoEncontrado, PermisoDenegado
+from core.monitoreo_tx.etl.sync import ResumenSincronizacion, sincronizar
+from core.monitoreo_tx.repositorio import EmpresasRepo, SincronizacionesRepo, TransaccionesRepo
+from core.monitoreo_tx.risk_analysis import analizar_riesgo_cliente
 
 logger = logging.getLogger(__name__)
 
@@ -196,9 +196,9 @@ class MonitoreoService:
     def estado_nube(self, user: dict) -> dict:
         """Configuración, conexión, últimas revisiones y últimos archivos procesados."""
         _exigir(user, ROLES_MONITOREO)
-        from app.monitoreo_tx.nube import credenciales
-        from app.monitoreo_tx.nube.fuentes import ConfigOneDrive, fuente_configurada
-        from app.monitoreo_tx.nube.sincronizacion import ultimas_revisiones, ultimos_archivos
+        from core.monitoreo_tx.nube import credenciales
+        from core.monitoreo_tx.nube.fuentes import ConfigOneDrive, fuente_configurada
+        from core.monitoreo_tx.nube.sincronizacion import ultimas_revisiones, ultimos_archivos
         cfg = ConfigOneDrive.desde_entorno()
         conexion = credenciales.info(self.engine) if cfg and cfg.delegado else None
         fuente = fuente_configurada(self.engine) if cfg else None
@@ -215,8 +215,8 @@ class MonitoreoService:
     def iniciar_conexion_onedrive(self, user: dict) -> dict:
         """Pide a Microsoft el código para conectar (modo delegado)."""
         _exigir(user, ROLES_CARGA)
-        from app.monitoreo_tx.domain.errores import ErrorValidacion
-        from app.monitoreo_tx.nube.fuentes import ConfigOneDrive, iniciar_conexion
+        from core.monitoreo_tx.domain.errores import ErrorValidacion
+        from core.monitoreo_tx.nube.fuentes import ConfigOneDrive, iniciar_conexion
         cfg = ConfigOneDrive.desde_entorno()
         if cfg is None or not cfg.delegado:
             raise ErrorValidacion("La conexión con código no está configurada en el servidor "
@@ -226,14 +226,14 @@ class MonitoreoService:
     def completar_conexion_onedrive(self, user: dict, device_code: str) -> dict | None:
         """None si el usuario aún no termina de iniciar sesión; si terminó, guarda la conexión."""
         _exigir(user, ROLES_CARGA)
-        from app.monitoreo_tx.nube import credenciales
-        from app.monitoreo_tx.nube.fuentes import ConfigOneDrive, completar_conexion
+        from core.monitoreo_tx.nube import credenciales
+        from core.monitoreo_tx.nube.fuentes import ConfigOneDrive, completar_conexion
         cfg = ConfigOneDrive.desde_entorno()
         resultado = completar_conexion(cfg, device_code)
         if resultado is None:
             return None
         if not resultado.get("refresh_token"):
-            from app.monitoreo_tx.domain.errores import ErrorValidacion
+            from core.monitoreo_tx.domain.errores import ErrorValidacion
             raise ErrorValidacion("Microsoft no entregó un acceso permanente: verifique que la aplicación "
                                   "tenga el permiso offline_access.")
         credenciales.guardar(self.engine, resultado["refresh_token"], resultado["cuenta"],
@@ -244,16 +244,16 @@ class MonitoreoService:
 
     def desconectar_onedrive(self, user: dict) -> None:
         _exigir(user, ROLES_CARGA)
-        from app.monitoreo_tx.nube import credenciales
+        from core.monitoreo_tx.nube import credenciales
         credenciales.eliminar(self.engine)
         registrar_auditoria(user, "DELETE", "Monitoreo TX: OneDrive desconectado", entidad="tx_credenciales_nube")
 
     def sincronizar_nube_ahora(self, user: dict):
         """Revisión manual («Sincronizar ahora»), con el mismo proceso que la programada."""
         _exigir(user, ROLES_CARGA)
-        from app.monitoreo_tx.domain.errores import ErrorValidacion
-        from app.monitoreo_tx.nube.fuentes import fuente_configurada
-        from app.monitoreo_tx.nube.sincronizacion import revisar
+        from core.monitoreo_tx.domain.errores import ErrorValidacion
+        from core.monitoreo_tx.nube.fuentes import fuente_configurada
+        from core.monitoreo_tx.nube.sincronizacion import revisar
         fuente = fuente_configurada(self.engine)
         if fuente is None:
             raise ErrorValidacion("OneDrive no está configurado o no está conectado.")

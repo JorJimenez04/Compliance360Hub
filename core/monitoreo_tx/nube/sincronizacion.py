@@ -19,9 +19,9 @@ from pathlib import Path
 
 from sqlalchemy import Engine, select, text, update
 
-from app.monitoreo_tx.etl.sync import sincronizar
-from app.monitoreo_tx.nube.fuentes import ArchivoNube
-from app.monitoreo_tx.tablas import tx_archivos_nube, tx_revisiones_nube
+from core.monitoreo_tx.etl.sync import sincronizar
+from core.monitoreo_tx.nube.fuentes import ArchivoNube
+from core.monitoreo_tx.tablas import tx_archivos_nube, tx_revisiones_nube
 
 logger = logging.getLogger(__name__)
 

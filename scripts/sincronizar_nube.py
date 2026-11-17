@@ -36,7 +36,7 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
 
-    from app.monitoreo_tx.nube.fuentes import ConfigOneDrive, ErrorFuente, FuenteCarpeta, fuente_configurada
+    from core.monitoreo_tx.nube.fuentes import ConfigOneDrive, ErrorFuente, FuenteCarpeta, fuente_configurada
 
     fuente = FuenteCarpeta(a.carpeta) if a.carpeta else fuente_configurada()
     if fuente is None:
@@ -65,7 +65,7 @@ def main() -> int:
         return 0
 
     from db.database import engine
-    from app.monitoreo_tx.nube.sincronizacion import revisar
+    from core.monitoreo_tx.nube.sincronizacion import revisar
 
     try:
         r = revisar(fuente, engine, usuario="programada")

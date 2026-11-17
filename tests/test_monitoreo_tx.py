@@ -1,6 +1,6 @@
 """
 tests/test_monitoreo_tx.py
-Módulo Monitoreo Transaccional (app/monitoreo_tx).
+Módulo Monitoreo Transaccional (core/monitoreo_tx).
 
 Las pruebas de lectura, cálculo y formato no tocan la base: reproducen con un
 Excel sintético los problemas reales del reporte de AdamoPay (filas partidas,
@@ -26,9 +26,9 @@ import pytest
 os.environ.setdefault("DATABASE_URL", "postgresql://smoke:smoke@localhost:5432/smoke")
 os.environ.setdefault("APP_ENV", "development")
 
-from app.monitoreo_tx.domain.entidades import FiltrosTransacciones as Filtros  # noqa: E402
-from app.monitoreo_tx.domain.metricas import calcular_kpis  # noqa: E402
-from app.monitoreo_tx.etl.excel_loader import limpiar_hoja  # noqa: E402
+from core.monitoreo_tx.domain.entidades import FiltrosTransacciones as Filtros  # noqa: E402
+from core.monitoreo_tx.domain.metricas import calcular_kpis  # noqa: E402
+from core.monitoreo_tx.etl.excel_loader import limpiar_hoja  # noqa: E402
 
 COLS = [
     "No.", "FECHA", "HORA", "ID DE TRANSACCION", "TIPO DE TRANSACCION", "TIPO DE IDENTIFICACION",
@@ -102,7 +102,7 @@ def test_kpis():
 
 
 def test_tasa_descuenta_devoluciones_y_motivos():
-    from app.monitoreo_tx.domain import metricas as m
+    from core.monitoreo_tx.domain import metricas as m
 
     df = pd.DataFrame({
         "tipo_transaccion": ["Debito"] * 4 + ["Credito", "Fondeo", "Transferencia entre bolsillos"],
@@ -129,7 +129,7 @@ def test_tasa_descuenta_devoluciones_y_motivos():
 def test_periodo_anterior_y_granularidad():
     from datetime import date
 
-    from app.monitoreo_tx.domain import metricas as m
+    from core.monitoreo_tx.domain import metricas as m
 
     assert m.periodo_anterior(date(2026, 3, 1), date(2026, 3, 31)) == (date(2026, 1, 29), date(2026, 2, 28))
     assert m.granularidad_sugerida(date(2026, 1, 1), date(2026, 1, 31)) == "Diaria"
@@ -151,7 +151,7 @@ def test_periodo_anterior_y_granularidad():
     ("CAFÉ Y ÑOÑO", "CAFÉ Y ÑOÑO"),
 ])
 def test_reparar_codificacion(dañado, esperado):
-    from app.monitoreo_tx.etl.excel_loader import _limpiar_texto
+    from core.monitoreo_tx.etl.excel_loader import _limpiar_texto
     assert _limpiar_texto(dañado) == esperado
 
 
@@ -171,7 +171,7 @@ CSV_CLIENTE = (
 
 
 def test_ranking_de_clientes():
-    from app.monitoreo_tx.domain.metricas import top_beneficiarios
+    from core.monitoreo_tx.domain.metricas import top_beneficiarios
 
     def tx(doc, nombre, monto, estado="Pagado", tipo="Debito"):
         return {"id_beneficiario": doc, "beneficiario": nombre, "monto": monto, "estado": estado,
@@ -193,7 +193,7 @@ def test_ranking_de_clientes():
 
 
 def test_formato_cop():
-    from app.monitoreo_tx.ui.formato import formato_cop
+    from core.monitoreo_tx.formato import formato_cop
     sp = "\u00a0"
     assert formato_cop(1_234_567) == f"${sp}1.234.567"
     assert formato_cop(42_300_000, compacto=True) == f"${sp}42,3{sp}M"
@@ -203,7 +203,7 @@ def test_formato_cop():
 
 
 def test_enmascarar_deja_solo_el_final():
-    from app.monitoreo_tx.ui.formato import enmascarar
+    from core.monitoreo_tx.formato import enmascarar
     assert enmascarar("12345678901") == "•••••••8901"
     assert enmascarar(1088007763) == "••••••7763"
     assert enmascarar("123456") == "••••••"   # mostrar 4 de 6 lo revelaría casi entero
@@ -211,7 +211,7 @@ def test_enmascarar_deja_solo_el_final():
 
 
 def test_csv_de_un_cliente(tmp_path):
-    from app.monitoreo_tx.etl.excel_loader import ErrorEstructuraExcel, leer_csv_cliente
+    from core.monitoreo_tx.etl.excel_loader import ErrorEstructuraExcel, leer_csv_cliente
 
     ruta = tmp_path / "historial.csv"
     ruta.write_bytes(CSV_CLIENTE.encode("utf-8-sig"))
@@ -228,8 +228,8 @@ def test_csv_de_un_cliente(tmp_path):
 # ---------- Permisos (sin base: se rechaza antes de consultar) ----------
 @pytest.mark.parametrize("rol", ["comercial", "consulta", "cic", "agente", "manager_ops", None])
 def test_roles_sin_acceso_no_consultan(rol):
-    from app.monitoreo_tx.domain.errores import PermisoDenegado
-    from app.monitoreo_tx.servicio import MonitoreoService
+    from core.monitoreo_tx.domain.errores import PermisoDenegado
+    from core.monitoreo_tx.servicio import MonitoreoService
 
     srv = MonitoreoService(engine=None)   # si llegara a la base, fallaría con otro error
     user = {"id": 1, "username": "x", "rol": rol}
@@ -242,7 +242,7 @@ def test_roles_sin_acceso_no_consultan(rol):
 
 
 def test_menu_y_modulo_usan_los_mismos_roles():
-    from app.monitoreo_tx.config import ROLES_CARGA, ROLES_MONITOREO
+    from core.monitoreo_tx.config import ROLES_CARGA, ROLES_MONITOREO
     assert ROLES_MONITOREO == {"super_admin", "admin", "compliance"}
     assert ROLES_CARGA <= ROLES_MONITOREO
 
@@ -277,8 +277,8 @@ def engine_pg():
 
 
 def test_sincronizacion_incremental(excel, tmp_path, engine_pg):
-    from app.monitoreo_tx.etl.sync import sincronizar
-    from app.monitoreo_tx.repositorio import EmpresasRepo, TransaccionesRepo
+    from core.monitoreo_tx.etl.sync import sincronizar
+    from core.monitoreo_tx.repositorio import EmpresasRepo, TransaccionesRepo
 
     logs = tmp_path / "logs"
     r1 = sincronizar(excel, engine_pg, directorio_logs=logs)
@@ -311,8 +311,8 @@ def test_sincronizacion_incremental(excel, tmp_path, engine_pg):
 
 
 def test_csv_solo_afecta_a_su_empresa(excel, tmp_path, engine_pg):
-    from app.monitoreo_tx.etl.sync import sincronizar
-    from app.monitoreo_tx.repositorio import TransaccionesRepo
+    from core.monitoreo_tx.etl.sync import sincronizar
+    from core.monitoreo_tx.repositorio import TransaccionesRepo
 
     logs = tmp_path / "logs"
     sincronizar(excel, engine_pg, directorio_logs=logs)
@@ -325,8 +325,8 @@ def test_csv_solo_afecta_a_su_empresa(excel, tmp_path, engine_pg):
 
 
 def test_carga_interrumpida_queda_como_error_y_se_puede_reintentar(excel, tmp_path, engine_pg, monkeypatch):
-    from app.monitoreo_tx.etl import sync as modulo_sync
-    from app.monitoreo_tx.repositorio import SincronizacionesRepo, TransaccionesRepo
+    from core.monitoreo_tx.etl import sync as modulo_sync
+    from core.monitoreo_tx.repositorio import SincronizacionesRepo, TransaccionesRepo
 
     original = modulo_sync._sincronizar_cliente
     llamadas = {"n": 0}
@@ -355,7 +355,7 @@ def _cuenta(nos, saldos, montos):
 
 
 def test_continuidad_completa():
-    from app.monitoreo_tx.domain.continuidad import verificar_continuidad
+    from core.monitoreo_tx.domain.continuidad import verificar_continuidad
     # Fondeo de 1.000, dos pagos y una devolución: cada saldo = anterior + monto total
     c = verificar_continuidad(_cuenta([1, 2, 3, 4], [1000, 700, 500, 600], [1000, -300, -200, 100]))
     assert c.completa and not c.parcial
@@ -363,7 +363,7 @@ def test_continuidad_completa():
 
 
 def test_continuidad_detecta_huecos_y_descuadres():
-    from app.monitoreo_tx.domain.continuidad import verificar_continuidad
+    from core.monitoreo_tx.domain.continuidad import verificar_continuidad
     c = verificar_continuidad(_cuenta(
         [1, 2, 5, 6, 7, 9],
         [1000, 700, 400, 350, 999, 100],
@@ -376,7 +376,7 @@ def test_continuidad_detecta_huecos_y_descuadres():
 
 
 def test_continuidad_historial_parcial_y_numeros_repetidos():
-    from app.monitoreo_tx.domain.continuidad import verificar_continuidad
+    from core.monitoreo_tx.domain.continuidad import verificar_continuidad
     # Exporte que empieza en el 100; el 101 aparece dos veces (movimiento entre bolsillos)
     c = verificar_continuidad(_cuenta([100, 101, 101, 102], [500, 400, 300, 200], [-1, -100, -100, -100]))
     assert c.parcial and c.faltantes == 0
@@ -385,8 +385,8 @@ def test_continuidad_historial_parcial_y_numeros_repetidos():
 
 
 def test_sincronizacion_registra_la_completitud(excel, tmp_path, engine_pg):
-    from app.monitoreo_tx.etl.sync import sincronizar
-    from app.monitoreo_tx.repositorio import SincronizacionesRepo
+    from core.monitoreo_tx.etl.sync import sincronizar
+    from core.monitoreo_tx.repositorio import SincronizacionesRepo
 
     r = sincronizar(excel, engine_pg, directorio_logs=tmp_path)
     # En la hoja sintética el No. 7 no existe, y el 1 se rechaza (monto inválido):
@@ -449,12 +449,12 @@ class _GraphFalso:
 
 
 def _config_falsa():
-    from app.monitoreo_tx.nube.fuentes import ConfigOneDrive
+    from core.monitoreo_tx.nube.fuentes import ConfigOneDrive
     return ConfigOneDrive(tenant_id="t", client_id="c", client_secret="s", usuario="jorge@empresa.co")
 
 
 def test_onedrive_lista_subcarpetas_pagina_e_ignora_lo_que_no_aplica(tmp_path):
-    from app.monitoreo_tx.nube.fuentes import FuenteOneDrive
+    from core.monitoreo_tx.nube.fuentes import FuenteOneDrive
 
     graph = _GraphFalso(CSV_CLIENTE.encode("utf-8-sig"))
     fuente = FuenteOneDrive(_config_falsa(), sesion=graph)
@@ -470,7 +470,7 @@ def test_onedrive_lista_subcarpetas_pagina_e_ignora_lo_que_no_aplica(tmp_path):
 
 
 def test_onedrive_credenciales_rechazadas_dan_error_claro():
-    from app.monitoreo_tx.nube.fuentes import ErrorFuente, FuenteOneDrive
+    from core.monitoreo_tx.nube.fuentes import ErrorFuente, FuenteOneDrive
 
     class _Rechazo(_GraphFalso):
         def post(self, url, data=None, timeout=None):
@@ -481,7 +481,7 @@ def test_onedrive_credenciales_rechazadas_dan_error_claro():
 
 
 def test_configuracion_onedrive_desde_entorno(monkeypatch):
-    from app.monitoreo_tx.nube.fuentes import ConfigOneDrive
+    from core.monitoreo_tx.nube.fuentes import ConfigOneDrive
     for k in ("TX_ONEDRIVE_TENANT_ID", "TX_ONEDRIVE_CLIENT_ID", "TX_ONEDRIVE_CLIENT_SECRET",
               "TX_ONEDRIVE_USUARIO", "TX_ONEDRIVE_DRIVE_ID", "TX_ONEDRIVE_CARPETA"):
         monkeypatch.delenv(k, raising=False)
@@ -508,9 +508,9 @@ def engine_pg_nube(engine_pg):
 
 
 def test_revision_carga_lo_nuevo_una_sola_vez(tmp_path, engine_pg_nube):
-    from app.monitoreo_tx.nube.fuentes import FuenteOneDrive
-    from app.monitoreo_tx.nube.sincronizacion import revisar, ultimas_revisiones, ultimos_archivos
-    from app.monitoreo_tx.repositorio import TransaccionesRepo
+    from core.monitoreo_tx.nube.fuentes import FuenteOneDrive
+    from core.monitoreo_tx.nube.sincronizacion import revisar, ultimas_revisiones, ultimos_archivos
+    from core.monitoreo_tx.repositorio import TransaccionesRepo
 
     graph = _GraphFalso(CSV_CLIENTE.encode("utf-8-sig"))
     fuente = FuenteOneDrive(_config_falsa(), sesion=graph)
@@ -533,8 +533,8 @@ def test_revision_carga_lo_nuevo_una_sola_vez(tmp_path, engine_pg_nube):
 
 
 def test_revision_registra_error_de_un_archivo_y_sigue(tmp_path, engine_pg_nube):
-    from app.monitoreo_tx.nube.fuentes import FuenteCarpeta
-    from app.monitoreo_tx.nube.sincronizacion import revisar
+    from core.monitoreo_tx.nube.fuentes import FuenteCarpeta
+    from core.monitoreo_tx.nube.sincronizacion import revisar
 
     (tmp_path / "datos" / "Cliente A").mkdir(parents=True)
     (tmp_path / "datos" / "Cliente B").mkdir(parents=True)
@@ -547,8 +547,8 @@ def test_revision_registra_error_de_un_archivo_y_sigue(tmp_path, engine_pg_nube)
 
 def test_dos_revisiones_no_corren_a_la_vez(tmp_path, engine_pg_nube):
     from sqlalchemy import text
-    from app.monitoreo_tx.nube.fuentes import FuenteCarpeta
-    from app.monitoreo_tx.nube.sincronizacion import LLAVE_BLOQUEO, revisar
+    from core.monitoreo_tx.nube.fuentes import FuenteCarpeta
+    from core.monitoreo_tx.nube.sincronizacion import LLAVE_BLOQUEO, revisar
 
     (tmp_path / "vacia").mkdir()
     with engine_pg_nube.connect() as otra:
@@ -593,7 +593,7 @@ class _GraphDelegado(_GraphFalso):
 
 
 def test_conexion_con_codigo_espera_y_luego_entrega_la_cuenta():
-    from app.monitoreo_tx.nube.fuentes import ConfigOneDrive, completar_conexion, iniciar_conexion
+    from core.monitoreo_tx.nube.fuentes import ConfigOneDrive, completar_conexion, iniciar_conexion
 
     cfg = ConfigOneDrive(tenant_id="t", client_id="c")
     graph = _GraphDelegado(b"")
@@ -606,7 +606,7 @@ def test_conexion_con_codigo_espera_y_luego_entrega_la_cuenta():
 
 
 def test_delegado_lee_me_drive_y_guarda_el_token_rotado():
-    from app.monitoreo_tx.nube.fuentes import ConfigOneDrive, ErrorConexion, FuenteOneDrive
+    from core.monitoreo_tx.nube.fuentes import ConfigOneDrive, ErrorConexion, FuenteOneDrive
 
     cfg = ConfigOneDrive(tenant_id="t", client_id="c")
     graph = _GraphDelegado(CSV_CLIENTE.encode("utf-8-sig"))
@@ -626,7 +626,7 @@ def test_delegado_lee_me_drive_y_guarda_el_token_rotado():
 
 def test_credencial_se_guarda_cifrada_y_se_renueva(engine_pg_nube, monkeypatch):
     from sqlalchemy import text
-    from app.monitoreo_tx.nube import credenciales
+    from core.monitoreo_tx.nube import credenciales
 
     monkeypatch.setenv("SECRET_KEY", "x" * 43)
     credenciales.guardar(engine_pg_nube, "refresh-secreto", "jorge@holdingsbpo.co", "jorge")
@@ -647,7 +647,7 @@ def test_credencial_se_guarda_cifrada_y_se_renueva(engine_pg_nube, monkeypatch):
 
 
 def test_onedrive_encuentra_la_carpeta_fuera_de_la_raiz():
-    from app.monitoreo_tx.nube.fuentes import ErrorFuente, FuenteOneDrive
+    from core.monitoreo_tx.nube.fuentes import ErrorFuente, FuenteOneDrive
 
     graph = _GraphFalso(CSV_CLIENTE.encode("utf-8-sig"))
     graph.en_la_raiz = False

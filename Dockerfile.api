@@ -12,12 +12,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends libpq-dev gcc t
 
 WORKDIR /app
 
-# Mismas dependencias que la app actual + FastAPI/uvicorn
-COPY requirements.txt ./requirements.txt
+# Dependencias propias del backend (sin Streamlit)
 COPY api/requirements.txt ./requirements-api.txt
-RUN pip install --upgrade pip && pip install -r requirements.txt -r requirements-api.txt
+RUN pip install --upgrade pip && pip install -r requirements-api.txt
 
-COPY . .
+# Solo el código del backend: sin app/ (Streamlit) ni web/
+COPY api ./api
+COPY core ./core
+COPY db ./db
+COPY config ./config
+COPY scripts ./scripts
 RUN useradd --create-home app && mkdir -p data/logs && chown -R app /app
 USER app
 

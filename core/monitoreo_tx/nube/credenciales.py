@@ -23,7 +23,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import Engine, delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.monitoreo_tx.tablas import tx_credenciales_nube
+from core.monitoreo_tx.tablas import tx_credenciales_nube
 
 logger = logging.getLogger(__name__)
 

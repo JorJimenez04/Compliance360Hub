@@ -6,7 +6,8 @@ Desarrollada por el área de Compliance de AdamoServices.
 ## Stack Tecnológico
 
 - **Lenguaje:** Python 3.11
-- **Frontend:** Streamlit
+- **App actual:** Streamlit (todos los módulos)
+- **Nueva interfaz (en migración):** API FastAPI (`api/`) + frontend Next.js 16 / TypeScript / Tailwind 4 (`web/`). Por ahora cubre Monitoreo Transaccional.
 - **Base de Datos:** PostgreSQL (Docker local, Railway en producción)
 - **Autenticación:** Basada en roles (RBAC)
 - **Auditoría:** Log completo de cambios para cumplimiento regulatorio
@@ -19,6 +20,7 @@ Compliance360_Hub/
 │   ├── main.py                 # Entry point principal
 │   ├── auth/                   # Autenticación y control de acceso
 │   ├── pages/                  # Páginas de la app (Dashboard, Partners, Pipeline, Auditoría)
+│   ├── monitoreo_tx/ui/        # Pantallas Streamlit de Monitoreo Transaccional
 │   ├── components/             # Componentes UI reutilizables
 │   └── utils/                  # Funciones utilitarias
 ├── db/                         # Capa de datos
@@ -26,10 +28,18 @@ Compliance360_Hub/
 │   ├── models.py               # Modelos de datos (Pydantic)
 │   ├── repositories/           # Patrón Repository (CRUD desacoplado)
 │   └── migrations/             # Scripts SQL de migración
+├── api/                        # API FastAPI de la nueva interfaz
+│   ├── main.py                 # Entry point (uvicorn api.main:app)
+│   ├── seguridad.py            # Sesión (cookie HttpOnly firmada), CSRF, bloqueo por intentos, roles
+│   └── rutas/                  # auth y monitoreo (tablero, transacciones, riesgo, cargas, OneDrive, empresas)
+├── core/                       # Lógica de negocio compartida, sin Streamlit ni FastAPI
+│   └── monitoreo_tx/           # Servicio, repositorio, dominio, ETL, nube, riesgo, formato
+├── web/                        # Frontend Next.js (src/app, src/components, src/lib)
 ├── config/                     # Configuración centralizada
 │   └── settings.py
 ├── tests/                      # Suite de pruebas
 ├── data/                       # Archivos locales de trabajo (gitignored)
+├── Dockerfile / Dockerfile.api # Imágenes de la app Streamlit y de la API (web/Dockerfile para el frontend)
 ├── .env.example                # Variables de entorno de ejemplo
 ├── requirements.txt
 └── README.md
@@ -38,7 +48,7 @@ Compliance360_Hub/
 ## Monitoreo Transaccional (AdamoPay)
 
 Ítem **Monitoreo Transaccional** del menú (roles `super_admin`, `admin`, `compliance`).
-Código en `app/monitoreo_tx/` (integrado desde AdamoPay_Analisis-ReporteTX); tablas `tx_*`
+Lógica en `core/monitoreo_tx/` y pantallas Streamlit en `app/monitoreo_tx/ui/` (integrado desde AdamoPay_Analisis-ReporteTX); tablas `tx_*`
 creadas por la migración `035_monitoreo_transaccional.sql`.
 
 | Pestaña | Contenido |
@@ -72,6 +82,34 @@ Prueba sin cargar: `python scripts/sincronizar_nube.py --listar`.
 
 Pruebas de sincronización contra PostgreSQL (la base indicada se vacía):
 `$env:TX_TEST_PG_URL = "postgresql://adamo:adamo_dev_2026@localhost:5432/tx_test"`.
+
+## Nueva interfaz (API + Web)
+
+Reemplaza gradualmente la app Streamlit. Su primera pantalla es Monitoreo Transaccional
+(Tablero, Transacciones, Riesgo, Cargas y Empresas) y reutiliza la misma base de datos, roles y auditoría.
+
+- **API** (`api/`): sesión con cookie HttpOnly firmada con `SECRET_KEY`, protección CSRF por cabecera,
+  bloqueo por intentos fallidos y auditoría. Salud: `GET /api/salud`. Documentación interactiva
+  (`/api/docs`) solo fuera de producción.
+- **Web** (`web/`): el navegador solo habla con Next.js, que reenvía `/api/*` a FastAPI (variable `API_URL`).
+  `NEXT_PUBLIC_APP_CLASICA_URL` apunta a la app Streamlit.
+
+```bash
+# Terminal 1 — API (con el venv activo y el .env configurado)
+pip install -r api/requirements.txt      # autocontenido: no instala Streamlit
+uvicorn api.main:app --reload --port 8000
+
+# Terminal 2 — Web
+cd web
+npm install
+npm run dev          # http://localhost:3000   (npm run typecheck para validar tipos)
+```
+
+En Railway son dos servicios adicionales: la API (`Dockerfile.api`, `RAILWAY_DOCKERFILE_PATH=Dockerfile.api`,
+red privada, sin dominio público) y el frontend (`web/Dockerfile`, con `API_URL` como variable de build).
+`api/requirements.txt` es independiente de `requirements.txt` (el de Streamlit), y `Dockerfile.api`
+solo copia `api/`, `core/`, `db/`, `config/` y `scripts/`. Regla: `api/` y `core/` no importan `app/`. (Pendiente: `db/repositories/crypto_repo.py` aún importa `app.utils.crypto_logic`; no lo usa la API.)
+Pruebas de la API: `pytest tests/test_api.py`.
 
 ## Módulos de Pipeline (Estados)
 

@@ -382,7 +382,7 @@ def fuente_configurada(engine=None) -> FuenteOneDrive | None:
         return None
     if not cfg.delegado:
         return FuenteOneDrive(cfg)
-    from app.monitoreo_tx.nube import credenciales
+    from core.monitoreo_tx.nube import credenciales
     if engine is None:
         from db.database import engine as engine_bd
         engine = engine_bd

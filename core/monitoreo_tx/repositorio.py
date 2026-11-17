@@ -11,8 +11,8 @@ from datetime import date
 import pandas as pd
 from sqlalchemy import Connection, Engine, func, or_, select, update
 
-from app.monitoreo_tx.domain.entidades import EmpresaVista, FiltrosTransacciones
-from app.monitoreo_tx.tablas import clientes, tx_empresas, tx_sincronizaciones, tx_transacciones
+from core.monitoreo_tx.domain.entidades import EmpresaVista, FiltrosTransacciones
+from core.monitoreo_tx.tablas import clientes, tx_empresas, tx_sincronizaciones, tx_transacciones
 
 T = tx_transacciones.c
 E = tx_empresas.c

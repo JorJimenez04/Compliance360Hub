@@ -14,11 +14,11 @@ import logging
 import streamlit as st
 
 from app.components import ui_kit as ui
-from app.monitoreo_tx.domain.errores import ErrorDominio
-from app.monitoreo_tx.servicio import puede_cargar, puede_ver, servicio
+from core.monitoreo_tx.domain.errores import ErrorDominio
+from core.monitoreo_tx.servicio import puede_cargar, puede_ver, servicio
 from app.monitoreo_tx.ui import cargas, empresas, tablero
 from app.monitoreo_tx.ui.componentes import mostrar_error
-from app.monitoreo_tx.ui.formato import formato_fecha_hora
+from core.monitoreo_tx.formato import formato_fecha_hora
 
 logger = logging.getLogger(__name__)
 

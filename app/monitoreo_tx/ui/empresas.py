@@ -11,8 +11,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from app.monitoreo_tx.domain.errores import ErrorDominio
-from app.monitoreo_tx.servicio import servicio
+from core.monitoreo_tx.domain.errores import ErrorDominio
+from core.monitoreo_tx.servicio import servicio
 from app.monitoreo_tx.ui.componentes import mostrar_error
 
 

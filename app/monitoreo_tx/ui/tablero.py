@@ -17,13 +17,13 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
-from app.monitoreo_tx.domain import metricas
-from app.monitoreo_tx.domain.entidades import EmpresaVista, FiltrosTransacciones, OpcionesFiltro
-from app.monitoreo_tx.domain.errores import ErrorDominio
-from app.monitoreo_tx.servicio import registrar_auditoria, servicio
+from core.monitoreo_tx.domain import metricas
+from core.monitoreo_tx.domain.entidades import EmpresaVista, FiltrosTransacciones, OpcionesFiltro
+from core.monitoreo_tx.domain.errores import ErrorDominio
+from core.monitoreo_tx.servicio import registrar_auditoria, servicio
 from app.monitoreo_tx.ui import graficos
 from app.monitoreo_tx.ui.componentes import ficha, mostrar_error
-from app.monitoreo_tx.ui.formato import (
+from core.monitoreo_tx.formato import (
     enmascarar,
     fecha_corta,
     fecha_larga,

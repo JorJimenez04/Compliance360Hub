@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.monitoreo_tx.config import (
+from core.monitoreo_tx.config import (
     ESTADO_SIN_DATO,
     ESTADOS_EFECTIVOS,
     TIPOS_PERSONA_JURIDICA,

@@ -62,7 +62,7 @@ def main() -> int:
     logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
 
     from db.database import engine
-    from app.monitoreo_tx.etl.sync import sincronizar
+    from core.monitoreo_tx.etl.sync import sincronizar
 
     destino = engine.url.render_as_string(hide_password=True)
     print(f"Destino: {destino}")
