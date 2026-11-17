@@ -37,6 +37,12 @@ from app.monitoreo_tx.ui.formato import (
 
 logger = logging.getLogger(__name__)
 
+
+def _md(texto: str) -> str:
+    """Escapa los «$» de las cifras: con dos en un mismo párrafo, Streamlit los toma
+    como fórmula matemática y el texto sale roto."""
+    return texto.replace("$", "\\$")
+
 MAX_FILAS_TABLA = 10_000  # la tabla viaja al navegador en cada interacción; el CSV trae todo
 PERIODOS = {"Último mes": 30, "3 meses": 90, "12 meses": 365, "Todo": None, "Elegir fechas": None}
 PERIODO_INICIAL = "3 meses"
@@ -218,7 +224,7 @@ def _resumen_en_palabras(k: metricas.KPIs, anterior: metricas.KPIs | None,
 
     with st.container(border=True):
         st.markdown("**:material/insights: Resumen del período**")
-        st.markdown(" ".join(frases))
+        st.markdown(_md(" ".join(frases)))
 
 
 def _indicadores(k: metricas.KPIs, anterior: metricas.KPIs | None, df: pd.DataFrame) -> None:
@@ -321,10 +327,10 @@ def _pestaña_movimientos(df: pd.DataFrame) -> None:
         else:
             st.plotly_chart(graficos.grafico_rangos(dist), width="stretch", config=graficos.CONFIG)
             principal = dist.loc[dist["pagos"].idxmax()]
-            st.caption(f"La mayoría de los pagos ({formato_porcentaje(principal['pct'])}) está entre "
-                       f"{principal['rango'].replace('–', 'y')}." if "–" in principal["rango"] else
-                       f"La mayoría de los pagos ({formato_porcentaje(principal['pct'])}) son de "
-                       f"{principal['rango'].lower()}.")
+            st.caption(_md(f"La mayoría de los pagos ({formato_porcentaje(principal['pct'])}) está entre "
+                           f"{principal['rango'].replace('–', 'y')}." if "–" in principal["rango"] else
+                           f"La mayoría de los pagos ({formato_porcentaje(principal['pct'])}) son de "
+                           f"{principal['rango'].lower()}."))
 
 
 def _pestaña_ranking(df: pd.DataFrame, empresa: EmpresaVista) -> None:
@@ -413,11 +419,11 @@ def _pestaña_devoluciones(df: pd.DataFrame, k: metricas.KPIs) -> None:
         st.success("No hubo devoluciones en el período seleccionado.", icon=":material/check_circle:")
         return
 
-    st.markdown(
+    st.markdown(_md(
         f"En el período, **{formato_entero(k.devoluciones)} pagos** por **{formato_cop(k.monto_devuelto)}** "
         f"fueron devueltos por el banco destino "
         f"({formato_porcentaje(k.tasa_devolucion)} de los pagos exitosos)."
-    )
+    ))
     motivos = metricas.motivos_devolucion(df)
     izq, der = st.columns([1.6, 1], gap="large")
     with izq:
