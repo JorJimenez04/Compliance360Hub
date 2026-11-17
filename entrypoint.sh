@@ -1,5 +1,5 @@
 #!/bin/bash
-# entrypoint.sh — AdamoServices Partner Manager
+# entrypoint.sh — Compliance360 Hub
 # Ejecuta migraciones y luego arranca Streamlit.
 # Usado por Docker/Railway como punto de entrada del contenedor.
 set -euo pipefail

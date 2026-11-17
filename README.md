@@ -1,11 +1,11 @@
-# AdamoServices Partner Manager
+# Compliance360 Hub
 
-Aplicación web profesional para la gestión de Banking Partners y Aliados Estratégicos.  
+Plataforma de cumplimiento de AdamoServices: Banking Partners y Aliados Estratégicos, clientes, SARLAFT, Cripto Compliance y Monitoreo Transaccional (AdamoPay).  
 Desarrollada por el área de Compliance de AdamoServices.
 
 ## Stack Tecnológico
 
-- **Lenguaje:** Python 3.10+
+- **Lenguaje:** Python 3.11
 - **Frontend:** Streamlit
 - **Base de Datos:** PostgreSQL (Docker local, Railway en producción)
 - **Autenticación:** Basada en roles (RBAC)
@@ -14,7 +14,7 @@ Desarrollada por el área de Compliance de AdamoServices.
 ## Estructura del Proyecto
 
 ```
-AdamoServices_Partner_Manager/
+Compliance360_Hub/
 ├── app/                        # Lógica de la aplicación Streamlit
 │   ├── main.py                 # Entry point principal
 │   ├── auth/                   # Autenticación y control de acceso
@@ -22,14 +22,14 @@ AdamoServices_Partner_Manager/
 │   ├── components/             # Componentes UI reutilizables
 │   └── utils/                  # Funciones utilitarias
 ├── db/                         # Capa de datos
-│   ├── database.py             # Gestor de conexión (SQLite / PostgreSQL)
+│   ├── database.py             # Gestor de conexión (PostgreSQL)
 │   ├── models.py               # Modelos de datos (Pydantic)
 │   ├── repositories/           # Patrón Repository (CRUD desacoplado)
 │   └── migrations/             # Scripts SQL de migración
 ├── config/                     # Configuración centralizada
 │   └── settings.py
 ├── tests/                      # Suite de pruebas
-├── data/                       # Archivo SQLite local (gitignored)
+├── data/                       # Archivos locales de trabajo (gitignored)
 ├── .env.example                # Variables de entorno de ejemplo
 ├── requirements.txt
 └── README.md
@@ -76,7 +76,7 @@ pip install -r requirements.txt
 APP_ENV=development
 SECRET_KEY=cualquier_string_de_desarrollo_local
 ADMIN_USERNAME=jorge_jimenez
-ADMIN_PASSWORD=AdamoCompliance_2026!
+ADMIN_PASSWORD=<elige_una_contraseña_local_fuerte>
 ADMIN_EMAIL=compliance@adamoservices.co
 DATABASE_URL=postgresql://adamo:adamo_dev_2026@localhost:5432/adamoservices
 ```
@@ -95,8 +95,8 @@ Para detener la BD: `docker compose down`
 ## Instalación (resumen mínimo)
 
 ```bash
-git clone https://github.com/tu-org/adamoservices-partner-manager.git
-cd adamoservices-partner-manager
+git clone https://github.com/JorJimenez04/Proyecto_BP-AliadosEstrategicos_Reporte.git
+cd Proyecto_BP-AliadosEstrategicos_Reporte
 python -m venv .venv && .venv\Scripts\activate
 pip install -r requirements.txt
 ```

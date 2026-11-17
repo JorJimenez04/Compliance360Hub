@@ -1,6 +1,6 @@
 """
 app/components/ui_kit.py
-Kit de componentes visuales — AdamoServices Partner Manager.
+Kit de componentes visuales — Compliance360 Hub.
 
 Punto único donde vive el aspecto de la interfaz. Cada función devuelve un
 string de HTML; el módulo que la usa lo pinta con st.markdown(..., unsafe_allow_html=True)

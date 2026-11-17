@@ -1,6 +1,6 @@
 """
 app/components/agentes_ui.py
-Módulo de Equipos Operativos — AdamoServices Partner Manager.
+Módulo de Equipos Operativos — Compliance360 Hub.
 
 Módulo INFORMATIVO para gerencia y líderes de equipo.
 Los agentes son colaboradores registrados en el catálogo —

@@ -1,6 +1,6 @@
 """
 app/components/audit_ui.py
-Vista del Log de Auditoría — AdamoServices Partner Manager.
+Vista del Log de Auditoría — Compliance360 Hub.
 Solo accesible para roles admin y compliance.
 """
 

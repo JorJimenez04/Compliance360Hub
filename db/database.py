@@ -1,6 +1,6 @@
 """
 db/database.py
-Gestor de conexión a la base de datos — AdamoServices Partner Manager.
+Gestor de conexión a la base de datos — Compliance360 Hub.
 Motor: PostgreSQL vía SQLAlchemy.
 Ejecutar directamente para inicializar el esquema: python -m db.database
 """

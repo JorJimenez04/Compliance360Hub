@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────
-# Dockerfile — AdamoServices Partner Manager
+# Dockerfile — Compliance360 Hub
 # Base: python:3.11-slim  |  Target: Railway (PostgreSQL)
 # ─────────────────────────────────────────────────────────────────
 

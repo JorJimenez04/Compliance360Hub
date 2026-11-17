@@ -1,6 +1,6 @@
 """
 app/components/alerts.py
-Centro de Notificaciones de Compliance — AdamoServices Partner Manager.
+Centro de Notificaciones de Compliance — Compliance360 Hub.
 
 Renderiza el panel de alertas SARLAFT vencidas con botones de Acción Rápida
 para iniciar la re-calificación directamente desde el Dashboard.

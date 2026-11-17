@@ -1,4 +1,4 @@
-# 🔑 Credenciales de Prueba — AdamoServices Partner Manager
+# 🔑 Credenciales de Prueba — Compliance360 Hub
 
 > **Solo para desarrollo local.** No subir al repositorio. Agregar a `.gitignore` si se modifica con passwords reales.  
 > La contraseña de todos los usuarios es el valor de `ADMIN_PASSWORD` en tu archivo `.env`.

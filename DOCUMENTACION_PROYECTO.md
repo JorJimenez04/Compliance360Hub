@@ -1,4 +1,4 @@
-# Documentación Técnica — AdamoServices Partner Manager
+# Documentación Técnica — Compliance360 Hub
 **Compliance & Technology | AdamoServices**  
 **Versión:** 1.1 | **Motor BD:** PostgreSQL 16 | **Runtime:** Python 3.10+ | **Actualizado:** 2026-03-31
 
@@ -6,7 +6,7 @@
 
 ## 1. Descripción General
 
-**AdamoServices Partner Manager** es una aplicación web interna de gestión de cumplimiento regulatorio para la administración de **Banking Partners y Aliados Estratégicos**. Su objetivo principal es centralizar el ciclo de vida completo de cada aliado comercial bajo los estándares exigidos por la Superintendencia Financiera de Colombia.
+**Compliance360 Hub** es una aplicación web interna de gestión de cumplimiento regulatorio para la administración de **Banking Partners y Aliados Estratégicos**. Su objetivo principal es centralizar el ciclo de vida completo de cada aliado comercial bajo los estándares exigidos por la Superintendencia Financiera de Colombia.
 
 ### Funciones principales
 

@@ -57,3 +57,13 @@ review_screening.pdf
 # SQL generado con hashes de contraseña — no versionar
 scripts/_cic_sergio_generado.sql
 test_output.pdf
+
+# Informes generados localmente por Claude (DD de clientes: datos personales)
+Claude outputs/
+requirements_temporal.txt
+
+# Monitoreo Transaccional: exportes reales de AdamoPay y rechazos de carga
+data/*.xlsx
+data/*.xls
+data/*.csv
+data/logs/

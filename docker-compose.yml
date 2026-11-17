@@ -1,4 +1,4 @@
-# docker-compose.yml — AdamoServices Partner Manager
+# docker-compose.yml — Compliance360 Hub
 # Base de datos PostgreSQL para desarrollo local.
 # La aplicación se ejecuta directamente con: streamlit run app/main.py
 # En producción, Railway gestiona tanto la app como la BD.

@@ -1,6 +1,6 @@
 """
 app/components/email_ui.py
-Módulo 📧 Bandeja de Cumplimiento — AdamoServices Partner Manager.
+Módulo 📧 Bandeja de Cumplimiento — Compliance360 Hub.
 
 Centraliza los correos de los 3 buzones corporativos como casos
 gestionables con estado, prioridad, notas y trazabilidad completa.

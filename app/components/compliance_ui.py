@@ -1,6 +1,6 @@
 """
 app/components/compliance_ui.py
-Centro Documental de Cumplimiento -- AdamoServices Partner Manager.
+Centro Documental de Cumplimiento -- Compliance360 Hub.
 Gestor de documentos regulatorios (11 carpetas): Politicas, Manuales,
 Onboarding, Procesos y Procedimientos, Governanza, Empresariales,
 Capacitacion, Contratos, Actas y Formatos, Matrices y Tecnologia.

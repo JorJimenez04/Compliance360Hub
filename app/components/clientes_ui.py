@@ -1,6 +1,6 @@
 """
 app/components/clientes_ui.py
-Módulo 👥 Gestión de Clientes — AdamoServices Partner Manager.
+Módulo 👥 Gestión de Clientes — Compliance360 Hub.
 Vista unificada KYC + contratos + personas + documentos + riesgo SARLAFT.
 """
 

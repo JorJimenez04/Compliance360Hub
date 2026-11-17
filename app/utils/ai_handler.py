@@ -1,6 +1,6 @@
 """
 app/utils/ai_handler.py
-Motor de IA centralizado — AdamoServices Partner Manager.
+Motor de IA centralizado — Compliance360 Hub.
 
 Proveedores soportados (vía AI_PROVIDER en .env):
   - "gemini"  (default) → google-generativeai

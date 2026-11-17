@@ -1,6 +1,6 @@
 """
 config/settings.py
-# AdamoServices Partner Manager — Configuración centralizada de la aplicación.
+# Compliance360 Hub — Configuración centralizada de la aplicación.
 # Lee variables desde el archivo .env usando python-dotenv.
 """
 
@@ -16,7 +16,7 @@ load_dotenv(BASE_DIR / ".env")
 
 
 # ── Aplicación ────────────────────────────────────────────
-APP_NAME: str = os.getenv("APP_NAME", "AdamoServices Partner Manager")
+APP_NAME: str = os.getenv("APP_NAME", "Compliance360 Hub")
 APP_ENV: str = os.getenv("APP_ENV", "development")
 DEBUG: bool = os.getenv("DEBUG", "true").lower() == "true"
 
