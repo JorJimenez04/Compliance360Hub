@@ -26,20 +26,37 @@ export default function Marco({ children }: { children: React.ReactNode }) {
   const ruta = usePathname();
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [menuAbierto, setMenuAbierto] = useState(false);
+  const [falloServidor, setFalloServidor] = useState(false);
+  const [intento, setIntento] = useState(0);
 
   useEffect(() => {
+    setFalloServidor(false);
     api<Perfil>("/api/auth/yo")
       .then(setPerfil)
       .catch((e) => {
         if (e instanceof ErrorApi && e.estado === 401) router.replace(`/login?siguiente=${encodeURIComponent(ruta)}`);
+        else setFalloServidor(true);
       });
-  }, [router, ruta]);
+  }, [router, ruta, intento]);
 
   useEffect(() => setMenuAbierto(false), [ruta]);
 
   async function salir() {
     try { await enviar("/api/auth/logout"); } finally { router.replace("/login"); }
   }
+
+  if (!perfil && falloServidor)
+    return (
+      <div className="grid min-h-dvh place-items-center px-4 text-center">
+        <div className="max-w-sm space-y-3">
+          <p className="font-medium">No se pudo conectar con el servidor.</p>
+          <p className="text-sm text-texto-3">Verifique que la API esté en ejecución e intente de nuevo.</p>
+          <button onClick={() => setIntento((n) => n + 1)} className="rounded-lg border border-acento/30 bg-acento-tenue px-4 py-2 text-sm font-medium text-acento">
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
 
   if (!perfil)
     return <div className="grid min-h-dvh place-items-center"><Loader2 className="size-5 animate-spin text-texto-3" aria-label="Cargando" /></div>;
