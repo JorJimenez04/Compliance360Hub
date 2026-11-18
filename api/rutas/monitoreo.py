@@ -22,17 +22,20 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from api import seguridad as seg
-from core.monitoreo_tx.config import ROLES_CARGA, ROLES_MONITOREO
+from core.monitoreo_tx.config import ROLES_CARGA, ROLES_CONSULTA, ROLES_MONITOREO
 from core.monitoreo_tx.domain import metricas
 from core.monitoreo_tx.domain.entidades import FiltrosTransacciones
 from core.monitoreo_tx.domain.errores import ErrorDominio, NoEncontrado, PermisoDenegado
-from core.monitoreo_tx.servicio import registrar_auditoria, servicio
+from core.monitoreo_tx.servicio import es_cliente, registrar_auditoria, servicio
 from core.monitoreo_tx.formato import enmascarar
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/monitoreo", tags=["monitoreo transaccional"])
 
-ver = seg.requiere_roles(ROLES_MONITOREO)
+# ver: tablero y transacciones (internos: todas las empresas; cliente: solo las suyas, que
+#      aplica el servicio). interno: todo lo demás (riesgo, exportes, cargas, OneDrive, enlaces).
+ver = seg.requiere_roles(ROLES_CONSULTA)
+interno = seg.requiere_roles(ROLES_MONITOREO)
 cargar = seg.requiere_roles(ROLES_CARGA)
 TAMANO_MAX_CARGA = 25 * 1024 * 1024   # 25 MB por archivo en la carga manual
 
@@ -69,11 +72,23 @@ def _filtros(desde: date | None, hasta: date | None, estados: list[str] | None, 
                                 texto=(texto or "").strip()[:120])
 
 
-def _empresa_json(e, conteo: dict[str, int] | None = None) -> dict:
-    return {"id": e.id, "nombre_reporte": e.nombre_reporte, "nombre": e.nombre_visible, "activa": e.activa,
-            "enlazada": e.enlazada, "cliente_id": e.cliente_id, "razon_social": e.razon_social,
-            "nit": e.nit, "nivel_riesgo": e.nivel_riesgo,
-            "transacciones": (conteo or {}).get(e.nombre_reporte)}
+def _empresa_json(e, conteo: dict[str, int] | None = None, interno_: bool = True) -> dict:
+    """Al cliente no se le envía la calificación de riesgo ni el enlace con la ficha KYC (datos internos)."""
+    datos = {"id": e.id, "nombre_reporte": e.nombre_reporte, "nombre": e.nombre_visible, "activa": e.activa,
+             "transacciones": (conteo or {}).get(e.nombre_reporte)}
+    if interno_:
+        datos |= {"enlazada": e.enlazada, "cliente_id": e.cliente_id, "razon_social": e.razon_social,
+                  "nit": e.nit, "nivel_riesgo": e.nivel_riesgo}
+    else:
+        datos |= {"enlazada": False, "cliente_id": None, "razon_social": None, "nit": None, "nivel_riesgo": None}
+    return datos
+
+
+def _auditar_consulta(u: seg.Usuario, empresa_id: int, vista: str) -> None:
+    """Cada consulta de un usuario externo queda registrada (los internos ya se auditan en otros puntos)."""
+    if es_cliente(u.como_dict()):
+        registrar_auditoria(u.como_dict(), "READ", f"Monitoreo TX: cliente consulta {vista} (empresa {empresa_id})",
+                            entidad_id=empresa_id, entidad="tx_empresas")
 
 
 # =========================
@@ -90,7 +105,7 @@ def resumen(u: seg.Usuario = Depends(ver)) -> dict:
     ultima = srv.ultima_carga()
     return {
         "ultima_carga": ultima["finalizado_en"].isoformat() if ultima and ultima.get("finalizado_en") else None,
-        "empresas": [_empresa_json(e, conteo) for e in empresas],
+        "empresas": [_empresa_json(e, conteo, u.rol in ROLES_MONITOREO) for e in empresas],
         "puede_cargar": u.rol in ROLES_CARGA,
     }
 
@@ -100,7 +115,7 @@ def opciones(empresa_id: int, u: seg.Usuario = Depends(ver)) -> dict:
     srv, user = servicio(), u.como_dict()
     try:
         o = srv.opciones_filtro(user, empresa_id)
-        cont = srv.continuidad(user, empresa_id) if o.tiene_datos else None
+        cont = srv.continuidad(user, empresa_id) if o.tiene_datos and u.rol in ROLES_MONITOREO else None
     except Exception as e:
         _error(e)
     return {
@@ -129,6 +144,7 @@ def tablero(
         anterior = srv.kpis_periodo_anterior(user, empresa_id, f)
     except Exception as e:
         _error(e)
+    _auditar_consulta(u, empresa_id, "el tablero")
     if df.empty:
         return {"vacio": True}
     k = metricas.calcular_kpis(df)
@@ -181,6 +197,7 @@ def transacciones(
         df = srv.transacciones_filtradas(user, empresa_id, _filtros(desde, hasta, estados, texto))
     except Exception as e:
         _error(e)
+    _auditar_consulta(u, empresa_id, "las transacciones")
     total = len(df)
     tramo = df.iloc[(pagina - 1) * tamano: pagina * tamano].copy()
     if not tramo.empty:
@@ -205,7 +222,7 @@ def transacciones_csv(
     hasta: date | None = None,
     estados: list[str] | None = Query(None),
     texto: str = "",
-    u: seg.Usuario = Depends(ver),
+    u: seg.Usuario = Depends(interno),
 ) -> Response:
     srv, user = servicio(), u.como_dict()
     f = _filtros(desde, hasta, estados, texto)
@@ -228,7 +245,7 @@ def riesgo(
     hasta: date | None = None,
     estados: list[str] | None = Query(None),
     texto: str = "",
-    u: seg.Usuario = Depends(ver),
+    u: seg.Usuario = Depends(interno),
 ) -> dict:
     try:
         analisis = servicio().evaluar_riesgo(u.como_dict(), empresa_id, _filtros(desde, hasta, estados, texto))
@@ -286,7 +303,7 @@ def _fila_bitacora(f: dict) -> dict:
 
 
 @router.get("/cargas")
-def bitacora(u: seg.Usuario = Depends(ver)) -> dict:
+def bitacora(u: seg.Usuario = Depends(interno)) -> dict:
     return {"cargas": [_fila_bitacora(f) for f in servicio().bitacora(u.como_dict(), 50)]}
 
 
@@ -328,7 +345,7 @@ async def carga_manual(
 # OneDrive
 # =========================
 @router.get("/nube")
-def nube(u: seg.Usuario = Depends(ver)) -> dict:
+def nube(u: seg.Usuario = Depends(interno)) -> dict:
     e = servicio().estado_nube(u.como_dict())
     conexion = e["conexion"]
     return {

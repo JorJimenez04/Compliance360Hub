@@ -36,7 +36,7 @@ def login(datos: Credenciales, request: Request, response: Response) -> dict:
     seg.limpiar_fallos(clave)
     seg.auditar(u, "LOGIN", "usuarios", f"Inicio de sesión exitoso (nueva interfaz) · IP: {ip}",
                 entidad_id=u.id or None, ip=ip)
-    response.set_cookie(value=seg.crear_token(u), **seg.opciones_cookie())
+    response.set_cookie(value=seg.crear_token(u), **seg.opciones_cookie(u.rol))
     return _perfil(u)
 
 

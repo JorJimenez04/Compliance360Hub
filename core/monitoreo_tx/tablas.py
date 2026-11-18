@@ -23,6 +23,14 @@ tx_empresas = Table(
     Column("updated_at", DateTime),
 )
 
+# Qué empresas puede consultar cada usuario con rol «cliente» (migración 037)
+usuario_empresas = Table(
+    "usuario_empresas", metadata,
+    Column("usuario_id", Integer, primary_key=True),
+    Column("empresa_id", Integer, primary_key=True),
+    Column("created_at", DateTime),
+)
+
 tx_transacciones = Table(
     "tx_transacciones", metadata,
     Column("id", BigInteger, primary_key=True),

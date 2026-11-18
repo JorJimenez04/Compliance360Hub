@@ -5,6 +5,7 @@ import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Download, Inbox,
 import { Aviso, Boton, Entrada, Esqueleto, Insignia, Tarjeta, Vacio } from "@/components/ui/basicos";
 import { query } from "@/lib/api";
 import { useDatos } from "@/lib/useDatos";
+import { useSesion } from "@/lib/sesion";
 import { entero, fechaHora, moneda } from "@/lib/formato";
 import type { PaginaTx, Transaccion } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
@@ -21,6 +22,7 @@ function tonoMovimiento(t: Transaccion) {
 }
 
 export default function VistaTransacciones({ empresaId, filtros }: { empresaId: number; filtros: Filtros }) {
+  const esCliente = useSesion().rol === "cliente";
   const [texto, setTexto] = useState("");
   const [buscar, setBuscar] = useState("");
   const [pagina, setPagina] = useState(1);
@@ -44,10 +46,12 @@ export default function VistaTransacciones({ empresaId, filtros }: { empresaId: 
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[13px] text-texto-3">{datos ? `${entero(datos.total)} movimientos` : "…"}</span>
-          <a href={`/api/monitoreo/empresas/${empresaId}/transacciones.csv${query(base)}`} download
-            title="Descarga con documentos y cuentas completos. Queda registrada en la auditoría.">
-            <Boton type="button" tabIndex={-1}><Download className="size-4" />Descargar CSV</Boton>
-          </a>
+          {!esCliente && (
+            <a href={`/api/monitoreo/empresas/${empresaId}/transacciones.csv${query(base)}`} download
+              title="Descarga con documentos y cuentas completos. Queda registrada en la auditoría.">
+              <Boton type="button" tabIndex={-1}><Download className="size-4" />Descargar CSV</Boton>
+            </a>
+          )}
         </div>
       </div>
 

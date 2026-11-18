@@ -44,7 +44,7 @@ jobs:
       # Solo las dependencias del backend: así el CI también vigila que api/ y core/
       # no dependan de Streamlit.
       - run: pip install -r api/requirements.txt
-      - run: python -m pytest tests/test_api.py tests/test_monitoreo_tx.py -q
+      - run: python -m pytest tests/test_api.py tests/test_monitoreo_tx.py tests/test_cliente.py -q
 
   frontend:
     name: Frontend (typecheck y build)

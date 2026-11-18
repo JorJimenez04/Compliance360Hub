@@ -21,7 +21,7 @@ import pandas as pd
 from sqlalchemy import Engine
 
 from core.monitoreo_tx.characterization.base_characterization import caracterizar_cliente_gafi
-from core.monitoreo_tx.config import ROLES_CARGA, ROLES_MONITOREO
+from core.monitoreo_tx.config import ROL_CLIENTE, ROLES_CARGA, ROLES_CONSULTA, ROLES_MONITOREO
 from core.monitoreo_tx.domain import metricas
 from core.monitoreo_tx.domain.continuidad import Continuidad, verificar_continuidad
 from core.monitoreo_tx.domain.entidades import EmpresaVista, FiltrosTransacciones, OpcionesFiltro
@@ -41,6 +41,11 @@ def puede_ver(user: dict | None) -> bool:
 
 def puede_cargar(user: dict | None) -> bool:
     return bool(user) and user.get("rol") in ROLES_CARGA
+
+
+def es_cliente(user: dict | None) -> bool:
+    """Usuario externo: solo ve las empresas que tiene asignadas (usuario_empresas)."""
+    return bool(user) and user.get("rol") == ROL_CLIENTE
 
 
 def _exigir(user: dict | None, roles: frozenset[str]) -> None:
@@ -90,19 +95,33 @@ class MonitoreoService:
 
     # ---------- Empresas ----------
     def empresas(self, user: dict, solo_activas: bool = True) -> list[EmpresaVista]:
-        _exigir(user, ROLES_MONITOREO)
-        return self.empresas_repo.listar(solo_activas=solo_activas)
+        _exigir(user, ROLES_CONSULTA)
+        todas = self.empresas_repo.listar(solo_activas=solo_activas)
+        if es_cliente(user):
+            permitidas = self.empresas_repo.ids_de_usuario(user["id"])
+            return [e for e in todas if e.id in permitidas]
+        return todas
 
     def _empresa(self, user: dict, empresa_id: int) -> EmpresaVista:
-        _exigir(user, ROLES_MONITOREO)
+        """Única puerta de entrada a los datos de una empresa: aquí se aplica el alcance del cliente.
+
+        Un cliente que pide una empresa que no es suya recibe «no existe», igual que si
+        el id no existiera: no se confirma que esa empresa esté en el sistema."""
+        _exigir(user, ROLES_CONSULTA)
+        if es_cliente(user) and empresa_id not in self.empresas_repo.ids_de_usuario(user["id"]):
+            raise NoEncontrado("La empresa no existe.")
         empresa = self.empresas_repo.obtener(empresa_id)
         if empresa is None:
             raise NoEncontrado("La empresa no existe.")
         return empresa
 
     def conteo_por_empresa(self, user: dict) -> dict[str, int]:
-        _exigir(user, ROLES_MONITOREO)
-        return self.transacciones.conteo_por_cliente()
+        _exigir(user, ROLES_CONSULTA)
+        conteo = self.transacciones.conteo_por_cliente()
+        if es_cliente(user):
+            propias = {e.nombre_reporte for e in self.empresas(user, solo_activas=False)}
+            return {nombre: n for nombre, n in conteo.items() if nombre in propias}
+        return conteo
 
     def clientes_disponibles(self, user: dict) -> list[dict]:
         _exigir(user, ROLES_CARGA)
@@ -144,7 +163,9 @@ class MonitoreoService:
         return self._consultar(self._version(), empresa.nombre_reporte, filtros)
 
     def csv_transacciones(self, user: dict, empresa_id: int, filtros: FiltrosTransacciones) -> bytes:
-        """CSV completo (con cuentas y documentos sin enmascarar). Se llama solo al descargar."""
+        """CSV completo (con cuentas y documentos sin enmascarar). Se llama solo al descargar.
+        Solo roles internos: el cliente no exporta."""
+        _exigir(user, ROLES_MONITOREO)
         df = self.transacciones_filtradas(user, empresa_id, filtros)
         return metricas.a_csv(metricas.tabla_para_exporte(df))
 
@@ -161,12 +182,15 @@ class MonitoreoService:
         return metricas.kpis_desde_totales(totales)
 
     def continuidad(self, user: dict, empresa_id: int) -> Continuidad:
-        """Completitud de todo lo guardado de la empresa: numeración y saldo corrido."""
+        """Completitud de todo lo guardado de la empresa: numeración y saldo corrido (control interno)."""
+        _exigir(user, ROLES_MONITOREO)
         empresa = self._empresa(user, empresa_id)
         return self._continuidad(self._version(), empresa.nombre_reporte)
 
     def evaluar_riesgo(self, user: dict, empresa_id: int, filtros: FiltrosTransacciones) -> dict:
-        """Scoring GAFI/UIAF indicativo sobre las transacciones del filtro."""
+        """Scoring GAFI/UIAF indicativo sobre las transacciones del filtro.
+        Evaluación interna de Cumplimiento: nunca se muestra al cliente evaluado."""
+        _exigir(user, ROLES_MONITOREO)
         empresa = self._empresa(user, empresa_id)
         return self._riesgo(self._version(), empresa.nombre_reporte, filtros)
 

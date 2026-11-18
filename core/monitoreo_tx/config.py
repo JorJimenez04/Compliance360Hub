@@ -28,3 +28,9 @@ SYNC_LOG_DIR = Path(os.getenv("TX_SYNC_LOG_DIR", BASE_DIR / "data" / "logs"))
 ROLES_MONITOREO = frozenset({"super_admin", "admin", "compliance"})
 # Roles que pueden cargar archivos y enlazar empresas con clientes
 ROLES_CARGA = frozenset({"super_admin", "admin", "compliance"})
+
+# Rol externo: el cliente de AdamoPay. Solo consulta el tablero y las transacciones
+# de SUS empresas (tabla usuario_empresas). No ve riesgo, cargas, enlaces ni exportes.
+ROL_CLIENTE = "cliente"
+# Quienes pueden consultar tablero y transacciones (internos: todas las empresas; cliente: las suyas)
+ROLES_CONSULTA = ROLES_MONITOREO | {ROL_CLIENTE}

@@ -12,7 +12,9 @@ import pandas as pd
 from sqlalchemy import Connection, Engine, func, or_, select, update
 
 from core.monitoreo_tx.domain.entidades import EmpresaVista, FiltrosTransacciones
-from core.monitoreo_tx.tablas import clientes, tx_empresas, tx_sincronizaciones, tx_transacciones
+from core.monitoreo_tx.tablas import (
+    clientes, tx_empresas, tx_sincronizaciones, tx_transacciones, usuario_empresas,
+)
 
 T = tx_transacciones.c
 E = tx_empresas.c
@@ -146,6 +148,13 @@ class EmpresasRepo:
         with self.engine.connect() as conn:
             fila = conn.execute(self._base().where(E.id == empresa_id)).first()
         return _a_vista(fila) if fila else None
+
+    def ids_de_usuario(self, usuario_id: int) -> set[int]:
+        """Empresas que un usuario con rol «cliente» tiene permitido consultar."""
+        with self.engine.connect() as conn:
+            filas = conn.scalars(
+                select(usuario_empresas.c.empresa_id).where(usuario_empresas.c.usuario_id == usuario_id))
+            return set(filas)
 
     def enlazar(self, empresa_id: int, cliente_id: int | None) -> None:
         with self.engine.begin() as conn:

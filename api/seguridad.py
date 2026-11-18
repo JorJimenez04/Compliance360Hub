@@ -34,6 +34,12 @@ logger = logging.getLogger(__name__)
 COOKIE = "c360_sesion"
 CABECERA_CSRF = "X-C360"
 DURACION_SESION_S = int(os.getenv("SESSION_TIMEOUT_MINUTES", "480")) * 60
+# Los usuarios externos (rol «cliente») tienen una sesión más corta
+DURACION_SESION_CLIENTE_S = int(os.getenv("SESSION_TIMEOUT_MINUTES_CLIENTE", "60")) * 60
+
+
+def duracion_sesion(rol: str) -> int:
+    return min(DURACION_SESION_S, DURACION_SESION_CLIENTE_S) if rol == "cliente" else DURACION_SESION_S
 MAX_FALLOS = 5
 BLOQUEO_S = 60
 
@@ -74,7 +80,7 @@ def _unb64(s: str) -> bytes:
 
 def crear_token(u: Usuario) -> str:
     datos = {"uid": u.id, "usr": u.username, "nom": u.nombre, "rol": u.rol, "eml": u.email,
-             "exp": int(time.time()) + DURACION_SESION_S}
+             "exp": int(time.time()) + duracion_sesion(u.rol)}
     cuerpo = _b64(json.dumps(datos, separators=(",", ":")).encode())
     firma = _b64(hmac.new(_clave(), cuerpo.encode(), hashlib.sha256).digest())
     return f"{cuerpo}.{firma}"
@@ -95,9 +101,9 @@ def leer_token(token: str) -> Usuario | None:
         return None
 
 
-def opciones_cookie() -> dict:
+def opciones_cookie(rol: str = "") -> dict:
     return {"key": COOKIE, "httponly": True, "samesite": "lax", "path": "/",
-            "secure": APP_ENV == "production", "max_age": DURACION_SESION_S}
+            "secure": APP_ENV == "production", "max_age": duracion_sesion(rol)}
 
 
 # =========================
@@ -184,8 +190,10 @@ def sigue_activo(u: Usuario) -> bool:
     from sqlalchemy import text
     from db.database import engine
     with engine.connect() as conn:
-        return conn.execute(text("SELECT 1 FROM usuarios WHERE id = :id AND activo = 1"),
-                            {"id": u.id}).first() is not None
+        fila = conn.execute(text("SELECT rol FROM usuarios WHERE id = :id AND activo = 1"),
+                            {"id": u.id}).first()
+    # Si le cambiaron el rol, la sesión anterior deja de valer: debe ingresar de nuevo
+    return fila is not None and fila[0] == u.rol
 
 
 def auditar(u: Usuario | None, accion: str, entidad: str, descripcion: str, *,
@@ -233,9 +241,9 @@ def requiere_roles(roles: frozenset[str] | set[str]):
 
 # Módulos que el frontend puede mostrar según el rol (menú lateral)
 def modulos_visibles(rol: str) -> list[str]:
-    from core.monitoreo_tx.config import ROLES_MONITOREO
+    from core.monitoreo_tx.config import ROLES_CONSULTA
     mods = []
-    if rol in ROLES_MONITOREO:
+    if rol in ROLES_CONSULTA:
         mods.append("monitoreo")
     if rol in Roles.CAN_VIEW_AUDIT:
         mods.append("auditoria")

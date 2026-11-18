@@ -105,6 +105,25 @@ npm install
 npm run dev          # http://localhost:3000   (npm run typecheck para validar tipos)
 ```
 
+## Acceso de clientes externos (rol `cliente`)
+
+Un cliente de AdamoPay entra a la nueva interfaz (no a Streamlit) y ve **solo Monitoreo Transaccional de
+sus empresas**: Tablero y Transacciones, con cuentas y documentos de beneficiarios enmascarados.
+No ve Riesgo (evaluación interna de Cumplimiento), Cargas, Empresas, OneDrive, la calificación ni la ficha
+KYC, y no puede exportar CSV. Su sesión dura 60 min (`SESSION_TIMEOUT_MINUTES_CLIENTE`) y cada consulta
+queda en `log_auditoria`.
+
+El alcance se aplica en el servidor (`core/monitoreo_tx/servicio.py`, método `_empresa`), no solo en la pantalla:
+pedir una empresa ajena responde «no existe». Las asignaciones viven en la tabla `usuario_empresas`
+(migración 037). Pruebas: `tests/test_cliente.py`.
+
+Crear o renovar la clave de un cliente (solo acepta el nombre **exacto** de la empresa; no toca usuarios
+que no sean `cliente`; la clave temporal se muestra una sola vez):
+
+```bash
+python scripts/crear_usuario_cliente.py --username jcmantilla --nombre "Juan Camilo Mantilla"     --email correo@ejemplo.com --empresa "CM Grupo Tecno" [--database-url postgresql://...] [--reset-clave]
+```
+
 ## Despliegue en Railway
 
 Un solo proyecto de Railway (`faithful-magic`, entorno `production`) con cinco servicios.
@@ -145,6 +164,7 @@ Prospecto → En Calificación → Onboarding → Activo → Suspendido → Term
 | `compliance`     | CRUD completo. Aprobación SARLAFT. Log de auditoría.      |
 | `comercial`      | Crear prospectos. Editar campos comerciales.              |
 | `consulta`       | Solo lectura.                                             |
+| `cliente`        | Externo. Solo la nueva interfaz: Tablero y Transacciones de **sus** empresas (ver abajo). |
 
 ## Ejecución en Local
 

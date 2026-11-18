@@ -11,7 +11,7 @@ import { cn } from "@/lib/cn";
 
 const ROLES: Record<string, string> = {
   super_admin: "Superadministrador", admin: "Administrador", compliance: "Cumplimiento",
-  comercial: "Comercial", auditor: "Auditor", consulta: "Consulta",
+  comercial: "Comercial", auditor: "Auditor", consulta: "Consulta", cliente: "Cliente",
 };
 
 // Módulos ya migrados a la nueva interfaz. El resto sigue en la app actual (Streamlit).
@@ -92,7 +92,7 @@ export default function Marco({ children }: { children: React.ReactNode }) {
             </div>
           );
         })}
-        {APP_CLASICA && (
+        {APP_CLASICA && perfil.rol !== "cliente" && (
           <div>
             <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-texto-3">Otros módulos</p>
             <a href={APP_CLASICA} target="_blank" rel="noopener"
