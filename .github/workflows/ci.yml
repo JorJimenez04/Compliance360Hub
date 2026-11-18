@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Si llega un push nuevo a la misma rama, se cancela la ejecución anterior
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: adamo
+          POSTGRES_PASSWORD: adamo_ci
+          POSTGRES_DB: tx_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U adamo -d tx_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Base desechable del servicio de arriba (la prueba la vacía)
+      TX_TEST_PG_URL: postgresql://adamo:adamo_ci@localhost:5432/tx_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"          # la misma versión que Dockerfile.api
+          cache: pip
+          cache-dependency-path: api/requirements.txt
+      # Solo las dependencias del backend: así el CI también vigila que api/ y core/
+      # no dependan de Streamlit.
+      - run: pip install -r api/requirements.txt
+      - run: python -m pytest tests/test_api.py tests/test_monitoreo_tx.py -q
+
+  frontend:
+    name: Frontend (typecheck y build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22                # la misma versión que web/Dockerfile
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+        env:
+          API_URL: http://localhost:8000
