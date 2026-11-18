@@ -105,8 +105,28 @@ npm install
 npm run dev          # http://localhost:3000   (npm run typecheck para validar tipos)
 ```
 
-En Railway son dos servicios adicionales: la API (`Dockerfile.api`, `RAILWAY_DOCKERFILE_PATH=Dockerfile.api`,
-red privada, sin dominio público) y el frontend (`web/Dockerfile`, con `API_URL` como variable de build).
+## Despliegue en Railway
+
+Un solo proyecto de Railway (`faithful-magic`, entorno `production`) con cinco servicios.
+No hay `railway.toml`: Config as Code está obsoleto en Railway, y un `railway.toml` en la raíz
+se aplicaba a todos los servicios del repo (forzaba el Dockerfile de Streamlit en la API).
+Cada servicio se configura en su panel.
+
+| Servicio | Origen | Configuración clave |
+|---|---|---|
+| App Streamlit | Raíz del repo, `Dockerfile` | Start command `/entrypoint.sh`; healthcheck `/_stcore/health` (180 s); reinicio On Failure |
+| `API` (FastAPI) | Raíz del repo, `Dockerfile.api` | `RAILWAY_DOCKERFILE_PATH=Dockerfile.api`, `PORT=8000`; sin dominio público; healthcheck `/api/salud` |
+| `web` (Next.js) | Root Directory `web` | `API_URL=http://api.railway.internal:8000` y `NEXT_PUBLIC_APP_CLASICA_URL` (ambas se leen al construir); healthcheck `/login`; único con dominio nuevo |
+| `sync-onedrive` | Misma imagen de Streamlit | `C360_TAREA=sincronizar_nube`, Cron Schedule diario |
+| `Postgres` | Plantilla de Railway (PostgreSQL 18) | Sin acceso público; los servicios usan `DATABASE_URL=${{Postgres.DATABASE_URL}}` por la red privada |
+
+Variables comunes a Streamlit, API y `sync-onedrive`: `DATABASE_URL`, `SECRET_KEY` (la misma en todos),
+`ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL`, `APP_ENV=production`.
+
+Para operar la base desde un equipo local (respaldo o restauración) hay que abrir el acceso público
+de `Postgres` solo durante la operación y cerrarlo al terminar. Respaldo con el cliente de la misma versión:
+`pg_dump "<URL pública>" --format=custom --no-owner --no-acl -f adamo.dump` (imagen `postgres:18`).
+
 `api/requirements.txt` es independiente de `requirements.txt` (el de Streamlit), y `Dockerfile.api`
 solo copia `api/`, `core/`, `db/`, `config/` y `scripts/`. Regla: `api/` y `core/` no importan `app/`. (Pendiente: `db/repositories/crypto_repo.py` aún importa `app.utils.crypto_logic`; no lo usa la API.)
 Pruebas de la API: `pytest tests/test_api.py`.

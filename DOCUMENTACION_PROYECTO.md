@@ -189,7 +189,7 @@ GitHub (Repositorio)
      ▼
 Railway Build Pipeline
      │
-     ├─ Lee railway.toml  →  builder = "DOCKERFILE"
+     ├─ Usa el Dockerfile detectado del servicio (config en el panel de Railway, sin railway.toml)
      ├─ Construye imagen desde Dockerfile
      │     ├─ python:3.10-slim
      │     ├─ pip install -r requirements.txt
@@ -207,20 +207,15 @@ Railway Build Pipeline
            └─ FAIL → Railway reintenta (máx 3 veces, política ON_FAILURE)
 ```
 
-### Configuración en `railway.toml`
+### Configuración del servicio (panel de Railway)
 
-```toml
-[build]
-builder        = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+El archivo `railway.toml` se eliminó: Config as Code está obsoleto en Railway y aplicaba el Dockerfile
+de Streamlit a todos los servicios. Valores que se fijan en Settings de cada servicio
+(detalle de todos los servicios en el README, sección «Despliegue en Railway»):
 
-[deploy]
-startCommand            = "/entrypoint.sh"
-healthcheckPath         = "/_stcore/health"
-healthcheckTimeout      = 30
-restartPolicyType       = "ON_FAILURE"
-restartPolicyMaxRetries = 3
-```
+- Start Command: `/entrypoint.sh`
+- Healthcheck Path: `/_stcore/health`, timeout 180 s
+- Restart Policy: On Failure, 3 reintentos
 
 ### Idempotencia del despliegue
 

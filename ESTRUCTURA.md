@@ -18,7 +18,7 @@ Proyecto_PartnersStatus/
 ├── 📄 entrypoint.sh                   # Script de arranque: production_check → migraciones → seed → Streamlit ($PORT)
 │                                      # Paso 3 (nuevo): seed_test_users.py --password $ADMIN_PASSWORD
 │                                      #   idempotente: ON CONFLICT DO NOTHING, nunca falla en redeploy
-├── 📄 railway.toml                    # Configuración Railway (Dockerfile builder, healthcheck /_stcore/health)
+├── 📄 Dockerfile.api                  # Imagen de la API FastAPI (api/, core/, db/, config/, scripts/); ver README → Despliegue en Railway
 ├── 📄 requirements.txt                # Dependencias Python (incluye psycopg2-binary para PG)
 ├── 📄 README.md                       # Documentación principal del proyecto
 ├── 📄 ESTRUCTURA.md                   # Este archivo — mapa del proyecto
