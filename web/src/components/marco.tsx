@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, ExternalLink, Loader2, LogOut, Menu, X } from "lucide-react";
+import { Activity, ExternalLink, Users, Loader2, LogOut, Menu, X } from "lucide-react";
 import { api, enviar, ErrorApi } from "@/lib/api";
 import { ContextoSesion } from "@/lib/sesion";
 import type { Perfil } from "@/lib/tipos";
@@ -17,6 +17,7 @@ const ROLES: Record<string, string> = {
 // Módulos ya migrados a la nueva interfaz. El resto sigue en la app actual (Streamlit).
 const SECCIONES = [
   { titulo: "Monitoreo", items: [{ modulo: "monitoreo", nombre: "Monitoreo transaccional", href: "/monitoreo", icono: Activity }] },
+  { titulo: "Administración", items: [{ modulo: "usuarios", nombre: "Usuarios clientes", href: "/usuarios", icono: Users }] },
 ] as const;
 
 const APP_CLASICA = process.env.NEXT_PUBLIC_APP_CLASICA_URL;

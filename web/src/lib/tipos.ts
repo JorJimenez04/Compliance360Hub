@@ -1,6 +1,6 @@
 // Contratos de la API (api/rutas/*.py)
 
-export type Modulo = "monitoreo" | "auditoria";
+export type Modulo = "monitoreo" | "auditoria" | "usuarios";
 
 export interface Perfil {
   id: number; username: string; nombre: string; rol: string; email: string | null; modulos: Modulo[];

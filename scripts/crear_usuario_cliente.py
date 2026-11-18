@@ -23,7 +23,6 @@ La base destino se resuelve como en los demás scripts (scripts/_db_target.py):
 from __future__ import annotations
 
 import argparse
-import secrets
 import sys
 from pathlib import Path
 
@@ -36,26 +35,13 @@ for _flujo in (sys.stdout, sys.stderr):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import bcrypt
 from sqlalchemy import text
+
+from api.claves import clave_temporal, hash_clave as _hash
 
 from scripts._db_target import crear_engine
 
 ROL = "cliente"
-# Sin caracteres que se confunden al leerlos (0/O, 1/l/I)
-ALFABETO = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-
-
-def clave_temporal(largo: int = 16) -> str:
-    while True:
-        c = "".join(secrets.choice(ALFABETO) for _ in range(largo))
-        # Garantiza mayúscula, minúscula y dígito
-        if any(x.islower() for x in c) and any(x.isupper() for x in c) and any(x.isdigit() for x in c):
-            return c
-
-
-def _hash(clave: str) -> str:
-    return bcrypt.hashpw(clave.encode(), bcrypt.gensalt(12)).decode()
 
 
 def _buscar_empresa(conn, texto: str) -> tuple[int, str]:

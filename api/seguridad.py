@@ -247,4 +247,6 @@ def modulos_visibles(rol: str) -> list[str]:
         mods.append("monitoreo")
     if rol in Roles.CAN_VIEW_AUDIT:
         mods.append("auditoria")
+    if rol == "super_admin":
+        mods.append("usuarios")
     return mods

@@ -124,6 +124,11 @@ que no sean `cliente`; la clave temporal se muestra una sola vez):
 python scripts/crear_usuario_cliente.py --username jcmantilla --nombre "Juan Camilo Mantilla"     --email correo@ejemplo.com --empresa "CM Grupo Tecno" [--database-url postgresql://...] [--reset-clave]
 ```
 
+**Restablecer la clave desde la interfaz.** El cliente no puede cambiar su clave. Solo el `super_admin` ve el menú
+«Usuarios clientes» (`/usuarios`) y puede generar una nueva: se muestra una sola vez, en la base solo queda el hash,
+solo aplica a usuarios `cliente` y queda en `log_auditoria`. La sesión que el cliente ya tuviera abierta sigue válida
+hasta que venza (60 min). Pruebas: `tests/test_usuarios.py`.
+
 ## Despliegue en Railway
 
 Un solo proyecto de Railway (`faithful-magic`, entorno `production`) con cinco servicios.
