@@ -135,3 +135,35 @@ def test_no_se_puede_tocar_a_un_usuario_interno_ni_inexistente(pg):
     with engine.connect() as c:
         assert c.execute(text("SELECT password_hash FROM usuarios WHERE username = 'interno'")).scalar_one() == "intacto"
     assert registros == []
+
+
+# ---------- Cuenta de emergencia (ADMIN_USERNAME) vs. usuario de la base ----------
+def test_la_cuenta_de_emergencia_con_usuario_en_la_base_toma_su_rol(pg, monkeypatch):
+    from sqlalchemy import text
+    engine, _ = pg
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO usuarios (username, nombre_completo, rol, password_hash, activo) "
+                          "VALUES ('jefe', 'Jefe Real', 'super_admin', 'x', 1)"))
+    monkeypatch.setenv("ADMIN_USERNAME", "jefe")
+    monkeypatch.setenv("ADMIN_PASSWORD", "Clave_De_Prueba_2026!")
+    u = seg.autenticar("jefe", "Clave_De_Prueba_2026!")
+    assert u.rol == "super_admin" and u.id == _id(engine, "jefe") and u.nombre == "Jefe Real"
+    assert "usuarios" in seg.modulos_visibles(u.rol)
+
+
+def test_la_cuenta_de_emergencia_sin_usuario_en_la_base_sigue_siendo_admin(pg, monkeypatch):
+    monkeypatch.setenv("ADMIN_USERNAME", "emergencia")
+    monkeypatch.setenv("ADMIN_PASSWORD", "Clave_De_Prueba_2026!")
+    u = seg.autenticar("emergencia", "Clave_De_Prueba_2026!")
+    assert u.rol == "admin" and u.id == 0
+    assert seg.autenticar("emergencia", "otra") is None
+
+
+def test_la_cuenta_de_emergencia_no_hereda_el_rol_de_un_usuario_inactivo(pg, monkeypatch):
+    from sqlalchemy import text
+    engine, _ = pg
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO usuarios (username, rol, password_hash, activo) VALUES ('baja', 'super_admin', 'x', 0)"))
+    monkeypatch.setenv("ADMIN_USERNAME", "baja")
+    monkeypatch.setenv("ADMIN_PASSWORD", "Clave_De_Prueba_2026!")
+    assert seg.autenticar("baja", "Clave_De_Prueba_2026!").rol == "admin"

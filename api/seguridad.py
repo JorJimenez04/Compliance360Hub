@@ -159,6 +159,16 @@ def autenticar(username: str, password: str) -> Usuario | None:
     env_user = os.getenv("ADMIN_USERNAME", "admin")
     env_pass = os.getenv("ADMIN_PASSWORD", "")
     if env_pass and hmac.compare_digest(username, env_user) and hmac.compare_digest(password, env_pass):
+        # Si ese usuario también existe (y está activo) en la base, manda su rol real: de lo contrario
+        # un super_admin cuyo usuario coincide con ADMIN_USERNAME entraría siempre como «admin».
+        with engine.connect() as conn:
+            fila = conn.execute(
+                text("SELECT id, username, nombre_completo, email, rol FROM usuarios "
+                     "WHERE username = :u AND activo = 1"), {"u": username},
+            ).mappings().first()
+        if fila:
+            return Usuario(id=fila["id"], username=fila["username"], nombre=fila["nombre_completo"] or "",
+                           rol=fila["rol"], email=fila["email"] or "")
         return Usuario(id=0, username=env_user, nombre="Administrador del Sistema", rol="admin",
                        email=os.getenv("ADMIN_EMAIL", ""))
 
