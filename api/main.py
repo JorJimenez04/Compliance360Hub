@@ -52,4 +52,5 @@ def salud() -> dict:
 app.include_router(auth.router)
 app.include_router(monitoreo.router)
 app.include_router(organizaciones.router)
+app.include_router(organizaciones.router_catalogo)
 app.include_router(usuarios.router)

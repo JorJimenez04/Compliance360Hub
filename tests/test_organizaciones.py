@@ -103,3 +103,70 @@ def test_el_externo_solo_ve_la_suya(pg):
     otra = ro.crear(ro.NuevaOrganizacion(nombre="Otra"), _Peticion(), JEFE)["id"]
     externo = seg.Usuario(9, "ceo", "CEO", "junta", organizacion_id=otra)
     assert ro.listar(externo)["organizaciones"] == [{"id": otra, "nombre": "Otra"}]
+
+
+# ---------- Ficha y paquete de vinculación (migración 039) ----------
+def test_ficha_valida_contra_el_catalogo(pg):
+    from api.rutas import organizaciones as ro2
+    org = ro.crear(ro.NuevaOrganizacion(nombre="Cliente Nuevo"), _Peticion(), JEFE)["id"]
+    malos = [{"servicios": ["inventado"]}, {"modelos_negocio": ["nada"]}, {"regimen": "x"},
+             {"nivel_riesgo": "Muy Alto"}, {"tipo_persona": "mixta"}]
+    for cambio in malos:
+        with pytest.raises(HTTPException) as e:
+            ro.cambiar(org, ro.CambioOrganizacion(**cambio), _Peticion(), JEFE)
+        assert e.value.status_code == 400
+    assert ro2.ficha(org, ANA)["nivel_riesgo"] == "Sin calificar"
+
+
+def test_ficha_completa_y_paquete(pg):
+    from sqlalchemy import text
+    engine, _ = pg
+    with engine.begin() as c:
+        jefe_id = c.execute(text("INSERT INTO usuarios (username, nombre_completo, rol) "
+                                 "VALUES ('jorge', 'Jorge Jiménez', 'super_admin') RETURNING id")).scalar_one()
+    org = ro.crear(ro.NuevaOrganizacion(nombre="Exchange SAS"), _Peticion(), JEFE)["id"]
+    ro.cambiar(org, ro.CambioOrganizacion(
+        servicios=["kyc_kyb", "monitoreo_cripto", "oficial_cumplimiento"], modelos_negocio=["exchange_cripto"],
+        regimen="psav", oficial_principal_id=jefe_id, oficial_suplente="Ana Pérez · CC 123",
+        fecha_designacion="2026-11-01", acta_designacion="Acta 15 de junta"), _Peticion(), JEFE)
+    f = ro.ficha(org, ANA)
+    assert f["servicios"] == ["kyc_kyb", "monitoreo_cripto", "oficial_cumplimiento"]
+    assert f["oficial_principal"] == "Jorge Jiménez" and f["fecha_designacion"] == "2026-11-01"
+    assert f["riesgo_sugerido"] == "Alto" and f["monitoreo_sugerido"] == ["fiat", "cripto"]
+    p = ro.paquete_organizacion(org, ANA)
+    assert p["nivel_es_provisional"] is True and p["nivel"] == "Alto"       # sin calificar: usa el sugerido
+    assert "Transacciones con activos virtuales (mensual)" in p["regimen"]["reportes_uiaf"]
+    assert {"wallets_declaradas", "reporte_kyt"} <= {d["codigo"] for d in p["documentos"]}
+    ro.cambiar(org, ro.CambioOrganizacion(nivel_riesgo="Medio"), _Peticion(), JEFE)
+    assert ro.paquete_organizacion(org, ANA)["nivel_es_provisional"] is False
+
+
+def test_el_oficial_debe_ser_del_equipo_interno(pg):
+    from sqlalchemy import text
+    engine, _ = pg
+    with engine.begin() as c:
+        ext = c.execute(text("INSERT INTO usuarios (username, rol, organizacion_id) "
+                             "SELECT 'ceo', 'junta', id FROM organizaciones WHERE nombre = 'Adamo' RETURNING id")).scalar_one()
+    adamo = next(o["id"] for o in ro.listar(ANA)["organizaciones"] if o["nombre"] == "Adamo")
+    for candidato in (ext, 999999):
+        with pytest.raises(HTTPException) as e:
+            ro.cambiar(adamo, ro.CambioOrganizacion(oficial_principal_id=candidato), _Peticion(), JEFE)
+        assert e.value.status_code == 400
+
+
+def test_paquete_de_prospecto():
+    p = ro.paquete_prospecto(modelos=["comercio_general"], nivel=None, tipo_persona="juridica", regimen=None, u=ANA)
+    assert p["nivel"] == "Bajo" and p["documentos"]
+    with pytest.raises(HTTPException):
+        ro.paquete_prospecto(modelos=["no_existe"], nivel=None, tipo_persona="juridica", regimen=None, u=ANA)
+
+
+def test_la_ficha_y_el_catalogo_son_internos():
+    for ruta in ("/api/organizaciones/{organizacion_id}", "/api/organizaciones/{organizacion_id}/paquete"):
+        dep = _dep(ruta, "GET")
+        with pytest.raises(HTTPException):
+            dep(seg.Usuario(9, "c", "C", "cliente", organizacion_id=1, alcance="organizacion"))
+    for r in ro.router_catalogo.routes:
+        dep = r.dependant.dependencies[-1].call
+        with pytest.raises(HTTPException):
+            dep(seg.Usuario(9, "j", "J", "junta", organizacion_id=1))

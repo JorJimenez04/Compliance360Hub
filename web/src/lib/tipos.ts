@@ -1,6 +1,6 @@
 // Contratos de la API (api/rutas/*.py)
 
-export type Modulo = "monitoreo" | "auditoria" | "usuarios" | "organizaciones" | "junta";
+export type Modulo = "monitoreo" | "auditoria" | "usuarios" | "organizaciones" | "junta" | "catalogo";
 
 export interface Perfil {
   id: number; username: string; nombre: string; rol: string; email: string | null; modulos: Modulo[];
@@ -110,3 +110,36 @@ export interface Nube {
 }
 
 export interface ClienteOpcion { id: number; razon_social: string; nit: string | null; nivel_riesgo: string | null; organizacion_id: number }
+
+// ---------- Catálogo de cumplimiento (core/cumplimiento/catalogo.py) ----------
+export type Nivel = "Alto" | "Medio" | "Bajo";
+
+export interface ServicioCat { codigo: string; nombre: string; descripcion: string }
+export interface RegimenCat {
+  codigo: string; nombre: string; supervisor: string; sistema: string; reportes_uiaf: string[]; nota: string;
+}
+export interface ModeloCat {
+  codigo: string; grupo: string; nombre: string; riesgo_sugerido: Nivel; regimenes: string[]; documentos: string[];
+  monitoreo: ("fiat" | "cripto")[]; senales_alerta: string[]; por_que: string;
+}
+export interface Catalogo { niveles: Nivel[]; servicios: ServicioCat[]; regimenes: RegimenCat[]; modelos: ModeloCat[] }
+
+export interface DocumentoPaquete {
+  codigo: string; nombre: string; carpeta: string; aporta: "cliente" | "oficial" | "ambos";
+  vigencia_meses: number | null; nota: string; origen: string[];
+}
+export interface Paquete {
+  nivel: Nivel; tipo_persona: "juridica" | "natural"; modelos: string[]; riesgo_sugerido: Nivel | null;
+  monitoreo_sugerido: string[]; regimen: RegimenCat | null; senales_alerta: string[]; documentos: DocumentoPaquete[];
+  nivel_es_provisional?: boolean;
+}
+
+export interface Ficha {
+  id: number; nombre: string; nit: string | null; activa: boolean; notas: string | null;
+  tipo_persona: "juridica" | "natural"; servicios: string[]; modelos_negocio: string[]; regimen: string | null;
+  nivel_riesgo: Nivel | "Sin calificar"; fecha_calificacion: string | null; proxima_revision: string | null;
+  oficial_principal_id: number | null; oficial_principal: string | null; oficial_suplente: string | null;
+  fecha_designacion: string | null; acta_designacion: string | null;
+  riesgo_sugerido: Nivel | null; monitoreo_sugerido: string[];
+  oficiales_disponibles: { id: number; nombre: string }[];
+}

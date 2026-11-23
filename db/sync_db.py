@@ -72,6 +72,7 @@ ALL_MIGRATIONS: list[str] = [
     "036_tx_sincronizacion_nube.sql",
     "037_rol_cliente.sql",
     "038_organizaciones.sql",
+    "039_ficha_organizacion.sql",
 ]
 
 # Tablas / columnas a validar tras las migraciones

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AlertTriangle, Building2, Plus } from "lucide-react";
 import { Aviso, Boton, Entrada, Esqueleto, Etiqueta, Insignia, Tarjeta, TituloTarjeta, Vacio } from "@/components/ui/basicos";
 import { enviar, ErrorApi } from "@/lib/api";
@@ -74,7 +75,7 @@ export default function Organizaciones() {
 
       <Tarjeta>
         <TituloTarjeta titulo="Organizaciones registradas"
-          descripcion="Desactivar una organización cierra de inmediato la sesión de sus usuarios externos y les impide ingresar." />
+          descripcion="Abra una organización para completar su ficha: servicios, régimen, modelos de negocio, riesgo y oficial. Desactivarla cierra de inmediato la sesión de sus usuarios externos." />
         {!datos ? <div className="space-y-2 p-5">{[0, 1].map((i) => <Esqueleto key={i} className="h-12" />)}</div>
           : datos.organizaciones.length === 0 ? <Vacio icono={<Building2 className="size-8" />} titulo="No hay organizaciones" />
           : (
@@ -89,7 +90,8 @@ export default function Organizaciones() {
                 <tbody>
                   {datos.organizaciones.map((o) => (
                     <tr key={o.id} className={cn("border-t border-borde/70", guardando === o.id && "opacity-60")}>
-                      <td className="px-3 py-3"><p className="font-medium">{o.nombre}</p>{o.nit && <p className="text-xs text-texto-3">NIT {o.nit}</p>}</td>
+                      <td className="px-3 py-3"><Link href={`/organizaciones/${o.id}`} className="font-medium text-acento hover:underline">{o.nombre}</Link>
+                        {o.nit && <p className="text-xs text-texto-3">NIT {o.nit}</p>}</td>
                       <td className="cifra px-3 py-3 text-right">{entero(o.clientes ?? 0)}</td>
                       <td className="cifra px-3 py-3 text-right">{entero(o.empresas ?? 0)}</td>
                       <td className="cifra px-3 py-3 text-right">{entero(o.usuarios ?? 0)}</td>

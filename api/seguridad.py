@@ -284,6 +284,8 @@ def modulos_visibles(rol: str) -> list[str]:
         mods.append("monitoreo")
     if rol in Roles.CAN_VIEW_AUDIT:
         mods.append("auditoria")
+    if rol in ROLES_CONSULTA and rol not in ROLES_EXTERNOS:
+        mods.append("catalogo")
     if rol == "super_admin":
         mods += ["organizaciones", "usuarios"]
     return mods

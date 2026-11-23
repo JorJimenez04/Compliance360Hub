@@ -16,7 +16,7 @@ from sqlalchemy import Engine, text
 
 MIGRACIONES = pathlib.Path(__file__).resolve().parent.parent / "db" / "migrations"
 DEL_MODULO = ("035_monitoreo_transaccional.sql", "036_tx_sincronizacion_nube.sql",
-              "037_rol_cliente.sql", "038_organizaciones.sql")
+              "037_rol_cliente.sql", "038_organizaciones.sql", "039_ficha_organizacion.sql")
 
 
 def crear_esquema_minimo(engine: Engine) -> None:
