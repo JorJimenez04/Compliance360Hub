@@ -31,6 +31,8 @@ class EmpresaVista:
     nombre_reporte: str
     activa: bool
     cliente_id: int | None = None
+    # Organización dueña de la empresa (migración 038). None solo en dobles de prueba antiguos.
+    organizacion_id: int | None = None
     razon_social: str | None = None
     nit: str | None = None
     nivel_riesgo: str | None = None

@@ -1,9 +1,10 @@
 """
 tests/test_cliente.py
-Rol externo «cliente»: ve solo Tablero y Transacciones de SUS empresas.
+Rol externo «cliente»: ve solo Tablero y Transacciones de SU organización (migración 038)
+y, con alcance 'empresas', solo de las empresas que tiene asignadas.
 
 Lo que se protege aquí es lo que no puede fallar:
-  - un cliente nunca ve datos de otra empresa (cambiando el id en la URL, por ejemplo);
+  - un cliente nunca ve datos de otra organización ni de otra empresa (cambiando el id en la URL, por ejemplo);
   - un cliente nunca llega a Riesgo, exportes, cargas, OneDrive ni al enlace con la ficha KYC;
   - cambiar el rol de alguien invalida su sesión.
 
@@ -27,20 +28,39 @@ from core.monitoreo_tx.domain.errores import NoEncontrado, PermisoDenegado  # no
 from core.monitoreo_tx.servicio import MonitoreoService  # noqa: E402
 
 PROPIA = EmpresaVista(id=1, nombre_reporte="Mi Empresa", activa=True, cliente_id=7,
-                      razon_social="Mi Empresa SAS", nit="900.111.222-3", nivel_riesgo="Alto")
-AJENA = EmpresaVista(id=2, nombre_reporte="Otra Empresa", activa=True)
-CLIENTE = {"id": 10, "username": "cli", "rol": "cliente"}
-CLIENTE_SIN_EMPRESAS = {"id": 11, "username": "cli2", "rol": "cliente"}
+                      razon_social="Mi Empresa SAS", nit="900.111.222-3", nivel_riesgo="Alto",
+                      organizacion_id=1)
+AJENA = EmpresaVista(id=2, nombre_reporte="Otra Empresa", activa=True, organizacion_id=1)
+# Empresa de OTRA organización: ningún usuario de la organización 1 debe verla nunca
+OTRA_ORG = EmpresaVista(id=3, nombre_reporte="Empresa de Otra Org", activa=True, organizacion_id=2)
+
+# Alcance 'empresas': solo las asignadas (usuario 10 → empresa 1)
+CLIENTE = {"id": 10, "username": "cli", "rol": "cliente", "organizacion_id": 1, "alcance": "empresas"}
+CLIENTE_SIN_EMPRESAS = {"id": 11, "username": "cli2", "rol": "cliente", "organizacion_id": 1, "alcance": "empresas"}
+# Alcance 'organizacion': todas las de su organización
+CLIENTE_ORG = {"id": 12, "username": "cli3", "rol": "cliente", "organizacion_id": 1, "alcance": "organizacion"}
+# Datos incompletos: se niega todo
+CLIENTE_SIN_ORG = {"id": 13, "username": "cli4", "rol": "cliente", "organizacion_id": None, "alcance": "organizacion"}
+CLIENTE_SIN_ALCANCE = {"id": 10, "username": "cli5", "rol": "cliente", "organizacion_id": 1, "alcance": None}
+JUNTA = {"id": 20, "username": "ceo", "rol": "junta", "organizacion_id": 1, "alcance": None}
 COMPLIANCE = {"id": 1, "username": "ana", "rol": "compliance"}
 
 
 class RepoEmpresas:
-    """Doble del repositorio: dos empresas y una asignación (usuario 10 → empresa 1)."""
-    _todas = {1: PROPIA, 2: AJENA}
-    _asignadas = {10: {1}}
+    """Doble del repositorio: tres empresas en dos organizaciones; usuario 10 → empresa 1.
+    El usuario 12 tiene una asignación «olvidada» a la empresa de otra organización: no debe servirle."""
+    _todas = {1: PROPIA, 2: AJENA, 3: OTRA_ORG}
+    _asignadas = {10: {1}, 12: {3}}
+    _org_clientes = {5: 1, 6: 2}
 
-    def listar(self, solo_activas=False):
-        return list(self._todas.values())
+    def listar(self, solo_activas=False, organizacion_id=None):
+        return [e for e in self._todas.values() if organizacion_id is None or e.organizacion_id == organizacion_id]
+
+    def organizacion_de_cliente(self, cliente_id):
+        return self._org_clientes.get(cliente_id)
+
+    def enlazar(self, empresa_id, cliente_id):
+        self.enlazado = (empresa_id, cliente_id)
 
     def obtener(self, empresa_id):
         return self._todas.get(empresa_id)
@@ -81,7 +101,51 @@ def test_cliente_solo_lista_sus_empresas(srv):
 
 
 def test_interno_ve_todas_las_empresas(srv):
-    assert {e.id for e in srv.empresas(COMPLIANCE)} == {1, 2}
+    assert {e.id for e in srv.empresas(COMPLIANCE)} == {1, 2, 3}
+
+
+def test_interno_puede_filtrar_por_organizacion(srv):
+    assert {e.id for e in srv.empresas(COMPLIANCE, organizacion_id=1)} == {1, 2}
+    assert {e.id for e in srv.empresas(COMPLIANCE, organizacion_id=2)} == {3}
+
+
+# ---------- Multi-organización ----------
+def test_alcance_organizacion_ve_toda_su_organizacion_y_nada_mas(srv):
+    assert {e.id for e in srv.empresas(CLIENTE_ORG)} == {1, 2}
+    srv.opciones_filtro(CLIENTE_ORG, 2)                       # empresa de su org no asignada: sí
+    with pytest.raises(NoEncontrado):
+        srv.opciones_filtro(CLIENTE_ORG, 3)                   # otra org, aunque tenga asignación: no
+
+
+def test_el_cliente_no_puede_pedir_otra_organizacion(srv):
+    """El parámetro organizacion_id del selector es solo para internos: al cliente se le ignora."""
+    assert {e.id for e in srv.empresas(CLIENTE_ORG, organizacion_id=2)} == {1, 2}
+    assert srv.conteo_por_empresa(CLIENTE_ORG, organizacion_id=2).keys() <= {"Mi Empresa", "Otra Empresa"}
+
+
+@pytest.mark.parametrize("usuario", [CLIENTE_SIN_ORG, CLIENTE_SIN_ALCANCE])
+def test_datos_incompletos_niegan_por_defecto(srv, usuario):
+    vistas = {e.id for e in srv.empresas(usuario)}
+    assert 3 not in vistas and 2 not in vistas
+    for empresa_id in (2, 3):
+        with pytest.raises(NoEncontrado):
+            srv.opciones_filtro(usuario, empresa_id)
+
+
+def test_la_junta_no_entra_al_detalle_transaccional(srv):
+    with pytest.raises(PermisoDenegado):
+        srv.empresas(JUNTA)
+    with pytest.raises(PermisoDenegado):
+        srv.transacciones_filtradas(JUNTA, 1, FiltrosTransacciones())
+
+
+def test_no_se_enlaza_una_empresa_con_un_cliente_de_otra_organizacion(srv):
+    from core.monitoreo_tx.domain.errores import ErrorValidacion
+    with pytest.raises(ErrorValidacion):
+        srv.enlazar_cliente(COMPLIANCE, 1, 6)       # empresa de org 1, cliente de org 2
+    with pytest.raises(NoEncontrado):
+        srv.enlazar_cliente(COMPLIANCE, 1, 999)
+    assert not hasattr(srv.empresas_repo, "enlazado")
 
 
 def test_cliente_accede_a_su_empresa(srv):
@@ -188,13 +252,29 @@ class _Motor:
         return _Conexion(self._fila)
 
 
-@pytest.mark.parametrize("rol_en_base, vigente", [("cliente", True), ("compliance", False), (None, False)])
-def test_cambiar_el_rol_invalida_la_sesion(monkeypatch, rol_en_base, vigente):
-    """La cookie lleva el rol de cuando se inició sesión; si en la base cambió (o se desactivó), deja de valer."""
+@pytest.mark.parametrize("en_base, vigente", [
+    (("cliente", 1, "empresas"), True),
+    (("compliance", None, None), False),        # cambió el rol
+    (("cliente", 2, "empresas"), False),        # cambió de organización
+    (("cliente", 1, "organizacion"), False),    # cambió el alcance
+    (None, False),                              # desactivado (o su organización desactivada)
+])
+def test_cambios_de_rol_organizacion_o_alcance_invalidan_la_sesion(monkeypatch, en_base, vigente):
+    """La cookie lleva rol, organización y alcance de cuando se inició sesión; si en la base cambió
+    cualquiera (o el usuario o su organización se desactivó), deja de valer."""
     from api import seguridad as seg
     import db.database as bd
-    monkeypatch.setattr(bd, "engine", _Motor(None if rol_en_base is None else (rol_en_base,)))
-    assert seg.sigue_activo(seg.Usuario(10, "cli", "Cli", "cliente")) is vigente
+    monkeypatch.setattr(bd, "engine", _Motor(en_base))
+    assert seg.sigue_activo(seg.Usuario(10, "cli", "Cli", "cliente", organizacion_id=1, alcance="empresas")) is vigente
+
+
+def test_el_token_conserva_organizacion_y_alcance(monkeypatch):
+    from api import seguridad as seg
+    monkeypatch.setenv("SECRET_KEY", "k" * 43)
+    u = seg.Usuario(10, "cli", "Cli", "cliente", organizacion_id=7, alcance="organizacion")
+    leido = seg.leer_token(seg.crear_token(u))
+    assert leido == u and leido.externo
+    assert not seg.Usuario(1, "ana", "Ana", "compliance").externo
 
 
 # ---------- API: rutas internas cerradas al cliente ----------
@@ -205,7 +285,7 @@ from fastapi.routing import APIRoute  # noqa: E402
 
 from api import seguridad as seg  # noqa: E402
 
-U_CLIENTE = seg.Usuario(10, "cli", "Cli", "cliente")
+U_CLIENTE = seg.Usuario(10, "cli", "Cli", "cliente", organizacion_id=1, alcance="empresas")
 U_COMPLIANCE = seg.Usuario(1, "ana", "Ana", "compliance")
 
 
@@ -297,15 +377,24 @@ def test_resumen_del_cliente_no_trae_datos_internos(rutas):
 
 def test_resumen_interno_conserva_el_detalle(rutas):
     datos = rutas.resumen(u=U_COMPLIANCE)
-    assert {e["id"] for e in datos["empresas"]} == {1, 2}
+    assert {e["id"] for e in datos["empresas"]} == {1, 2, 3}
+    assert {e["id"] for e in rutas.resumen(organizacion_id=2, u=U_COMPLIANCE)["empresas"]} == {3}
     propia = next(e for e in datos["empresas"] if e["id"] == 1)
     assert propia["nivel_riesgo"] == "Alto" and propia["nit"] == "900.111.222-3"
+
+
+def test_resumen_del_cliente_ignora_la_organizacion_pedida(rutas):
+    assert [e["id"] for e in rutas.resumen(organizacion_id=2, u=U_CLIENTE)["empresas"]] == [1]
 
 
 def test_perfil_del_cliente_solo_monitoreo():
     from api.rutas.auth import _perfil
     p = _perfil(U_CLIENTE)
     assert p["modulos"] == ["monitoreo"] and p["rol"] == "cliente"
+
+
+def test_perfil_de_la_junta_sin_monitoreo_ni_administracion():
+    assert seg.modulos_visibles("junta") == ["junta"]
 
 
 def test_la_consulta_del_cliente_queda_auditada(monkeypatch, rutas):
@@ -322,18 +411,10 @@ def engine_pg():
     url = os.getenv("TX_TEST_PG_URL")
     if not url:
         pytest.skip("Defina TX_TEST_PG_URL para probar contra PostgreSQL")
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import create_engine
+    from tests._esquema import crear_esquema_minimo
     engine = create_engine(url)
-    base = pathlib.Path(__file__).resolve().parent.parent / "db" / "migrations"
-    with engine.begin() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS usuario_empresas, tx_transacciones, tx_sincronizaciones, "
-                          "tx_empresas, usuarios, clientes CASCADE"))
-        conn.execute(text("CREATE TABLE clientes (id SERIAL PRIMARY KEY, razon_social TEXT, nit TEXT, "
-                          "nivel_riesgo TEXT, estado TEXT)"))
-        conn.execute(text("CREATE TABLE usuarios (id SERIAL PRIMARY KEY, username TEXT UNIQUE, "
-                          "nombre_completo TEXT, email TEXT, password_hash TEXT, rol TEXT, activo INTEGER DEFAULT 1)"))
-        conn.execute(text((base / "035_monitoreo_transaccional.sql").read_text(encoding="utf-8")))
-        conn.execute(text((base / "037_rol_cliente.sql").read_text(encoding="utf-8")))
+    crear_esquema_minimo(engine)
     yield engine
     engine.dispose()
 
@@ -343,14 +424,16 @@ def test_asignacion_y_alcance_contra_postgres(engine_pg):
     from core.monitoreo_tx.repositorio import EmpresasRepo
     with engine_pg.begin() as conn:
         conn.execute(text("INSERT INTO tx_empresas (nombre_reporte) VALUES ('Mi Empresa'), ('Otra Empresa')"))
-        conn.execute(text("INSERT INTO usuarios (username, rol) VALUES ('cli', 'cliente')"))
+        org = conn.execute(text("SELECT id FROM organizaciones WHERE nombre = 'Adamo'")).scalar_one()
+        conn.execute(text("INSERT INTO usuarios (username, rol, organizacion_id, alcance) "
+                          "VALUES ('cli', 'cliente', :o, 'empresas')"), {"o": org})
         ids = {r[1]: r[0] for r in conn.execute(text("SELECT id, nombre_reporte FROM tx_empresas"))}
         uid = conn.execute(text("SELECT id FROM usuarios WHERE username = 'cli'")).scalar_one()
         conn.execute(text("INSERT INTO usuario_empresas (usuario_id, empresa_id) VALUES (:u, :e)"),
                      {"u": uid, "e": ids["Mi Empresa"]})
 
     srv = MonitoreoService(engine_pg)
-    user = {"id": uid, "username": "cli", "rol": "cliente"}
+    user = {"id": uid, "username": "cli", "rol": "cliente", "organizacion_id": org, "alcance": "empresas"}
     assert EmpresasRepo(engine_pg).ids_de_usuario(uid) == {ids["Mi Empresa"]}
     assert [e.nombre_reporte for e in srv.empresas(user)] == ["Mi Empresa"]
     with pytest.raises(NoEncontrado):
@@ -361,7 +444,53 @@ def test_la_base_acepta_el_rol_cliente_y_rechaza_uno_inventado(engine_pg):
     from sqlalchemy import text
     from sqlalchemy.exc import IntegrityError
     with engine_pg.begin() as conn:
-        conn.execute(text("INSERT INTO usuarios (username, rol) VALUES ('ok', 'cliente')"))
+        conn.execute(text("INSERT INTO usuarios (username, rol, organizacion_id, alcance) "
+                          "SELECT 'ok', 'cliente', id, 'organizacion' FROM organizaciones WHERE nombre = 'Adamo'"))
     with pytest.raises(IntegrityError):
         with engine_pg.begin() as conn:
             conn.execute(text("INSERT INTO usuarios (username, rol) VALUES ('mal', 'rol_inventado')"))
+
+
+# ---------- Multi-organización contra PostgreSQL ----------
+def test_alcance_por_organizacion_contra_postgres(engine_pg):
+    """Dos organizaciones con empresas; un cliente con alcance de organización ve solo las suyas."""
+    from sqlalchemy import text
+    with engine_pg.begin() as conn:
+        adamo = conn.execute(text("SELECT id FROM organizaciones WHERE nombre = 'Adamo'")).scalar_one()
+        otra = conn.execute(text("INSERT INTO organizaciones (nombre) VALUES ('Otra Org') RETURNING id")).scalar_one()
+        conn.execute(text("INSERT INTO tx_empresas (nombre_reporte, organizacion_id) VALUES "
+                          "('A1', :a), ('A2', :a), ('O1', :o)"), {"a": adamo, "o": otra})
+        uid = conn.execute(text("INSERT INTO usuarios (username, rol, organizacion_id, alcance) "
+                                "VALUES ('cliorg', 'cliente', :o, 'organizacion') RETURNING id"), {"o": otra}).scalar_one()
+        ids = {r[1]: r[0] for r in conn.execute(text("SELECT id, nombre_reporte FROM tx_empresas"))}
+    srv = MonitoreoService(engine_pg)
+    user = {"id": uid, "username": "cliorg", "rol": "cliente", "organizacion_id": otra, "alcance": "organizacion"}
+    assert [e.nombre_reporte for e in srv.empresas(user)] == ["O1"]
+    for ajena in ("A1", "A2"):
+        with pytest.raises(NoEncontrado):
+            srv.opciones_filtro(user, ids[ajena])
+    interno = {"id": 1, "username": "ana", "rol": "compliance"}
+    assert {e.nombre_reporte for e in srv.empresas(interno, organizacion_id=adamo)} == {"A1", "A2"}
+
+
+def test_la_base_impone_las_reglas_de_organizacion(engine_pg):
+    """Aunque la aplicación fallara, la base rechaza perfiles externos mal formados y enlaces cruzados."""
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+    with engine_pg.begin() as conn:
+        adamo = conn.execute(text("SELECT id FROM organizaciones WHERE nombre = 'Adamo'")).scalar_one()
+        otra = conn.execute(text("INSERT INTO organizaciones (nombre) VALUES ('Otra Org') RETURNING id")).scalar_one()
+        conn.execute(text("INSERT INTO clientes (razon_social, nit, organizacion_id) VALUES ('C Otra', '1', :o)"),
+                     {"o": otra})
+        conn.execute(text("INSERT INTO tx_empresas (nombre_reporte, organizacion_id) VALUES ('A1', :a)"), {"a": adamo})
+    malos = [
+        "INSERT INTO usuarios (username, rol) VALUES ('j', 'junta')",                                    # sin org
+        "INSERT INTO usuarios (username, rol, organizacion_id) VALUES ('c', 'cliente', %d)" % adamo,     # sin alcance
+        "INSERT INTO usuarios (username, rol, organizacion_id) VALUES ('i', 'compliance', %d)" % adamo,  # interno con org
+        "INSERT INTO usuarios (username, rol, organizacion_id, alcance) VALUES ('k', 'cliente', %d, 'todo')" % adamo,
+        "UPDATE tx_empresas SET cliente_id = (SELECT id FROM clientes WHERE nit = '1') WHERE nombre_reporte = 'A1'",
+    ]
+    for sql in malos:
+        with pytest.raises(IntegrityError):
+            with engine_pg.begin() as conn:
+                conn.execute(text(sql))

@@ -3,21 +3,25 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, ExternalLink, Users, Loader2, LogOut, Menu, X } from "lucide-react";
+import { Activity, Building2, ExternalLink, LayoutDashboard, Users, Loader2, LogOut, Menu, X } from "lucide-react";
 import { api, enviar, ErrorApi } from "@/lib/api";
 import { ContextoSesion } from "@/lib/sesion";
-import type { Perfil } from "@/lib/tipos";
+import { ROLES_EXTERNOS, type Perfil } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
 
 const ROLES: Record<string, string> = {
   super_admin: "Superadministrador", admin: "Administrador", compliance: "Cumplimiento",
-  comercial: "Comercial", auditor: "Auditor", consulta: "Consulta", cliente: "Cliente",
+  comercial: "Comercial", auditor: "Auditor", consulta: "Consulta", cliente: "Cliente", junta: "Junta directiva",
 };
 
 // Módulos ya migrados a la nueva interfaz. El resto sigue en la app actual (Streamlit).
 const SECCIONES = [
+  { titulo: "Gestión", items: [{ modulo: "junta", nombre: "Tablero ejecutivo", href: "/junta", icono: LayoutDashboard }] },
   { titulo: "Monitoreo", items: [{ modulo: "monitoreo", nombre: "Monitoreo transaccional", href: "/monitoreo", icono: Activity }] },
-  { titulo: "Administración", items: [{ modulo: "usuarios", nombre: "Usuarios clientes", href: "/usuarios", icono: Users }] },
+  { titulo: "Administración", items: [
+    { modulo: "organizaciones", nombre: "Organizaciones", href: "/organizaciones", icono: Building2 },
+    { modulo: "usuarios", nombre: "Usuarios", href: "/usuarios", icono: Users },
+  ] },
 ] as const;
 
 const APP_CLASICA = process.env.NEXT_PUBLIC_APP_CLASICA_URL;
@@ -62,6 +66,14 @@ export default function Marco({ children }: { children: React.ReactNode }) {
   if (!perfil)
     return <div className="grid min-h-dvh place-items-center"><Loader2 className="size-5 animate-spin text-texto-3" aria-label="Cargando" /></div>;
 
+  // Una ruta fuera de los módulos del perfil (p. ej. la junta abriendo /monitoreo por un enlace viejo)
+  // vuelve al inicio, que lo lleva a su módulo. La API igual lo rechazaría: esto evita una pantalla de error.
+  const rutaPermitida = ruta === "/" || SECCIONES.some((s) => s.items.some((i) => ruta.startsWith(i.href) && perfil.modulos.includes(i.modulo)));
+  if (!rutaPermitida) {
+    if (typeof window !== "undefined") router.replace("/");
+    return <div className="grid min-h-dvh place-items-center"><Loader2 className="size-5 animate-spin text-texto-3" aria-label="Cargando" /></div>;
+  }
+
   const iniciales = perfil.nombre.split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase();
 
   const barra = (
@@ -93,7 +105,7 @@ export default function Marco({ children }: { children: React.ReactNode }) {
             </div>
           );
         })}
-        {APP_CLASICA && perfil.rol !== "cliente" && (
+        {APP_CLASICA && !ROLES_EXTERNOS.includes(perfil.rol) && (
           <div>
             <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-texto-3">Otros módulos</p>
             <a href={APP_CLASICA} target="_blank" rel="noopener"
@@ -109,7 +121,9 @@ export default function Marco({ children }: { children: React.ReactNode }) {
           <div className="grid size-8 shrink-0 place-items-center rounded-full bg-panel-2 text-xs font-semibold text-texto-2">{iniciales}</div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">{perfil.nombre}</p>
-            <p className="truncate text-xs text-texto-3">{ROLES[perfil.rol] ?? perfil.rol}</p>
+            <p className="truncate text-xs text-texto-3">
+              {ROLES[perfil.rol] ?? perfil.rol}{perfil.organizacion?.nombre ? ` · ${perfil.organizacion.nombre}` : ""}
+            </p>
           </div>
           <button onClick={salir} title="Cerrar sesión" aria-label="Cerrar sesión"
             className="rounded-md p-1.5 text-texto-3 hover:bg-panel-2 hover:text-texto">

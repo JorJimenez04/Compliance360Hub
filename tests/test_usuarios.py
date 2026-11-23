@@ -27,10 +27,18 @@ def _dependencia(ruta: str, metodo: str):
     raise AssertionError(f"Falta la ruta {metodo} {ruta}")
 
 
-RUTAS = [("/api/usuarios/clientes", "GET"), ("/api/usuarios/clientes/{usuario_id}/restablecer-clave", "POST")]
+RUTAS = [("/api/usuarios/clientes", "GET"), ("/api/usuarios/clientes/{usuario_id}/restablecer-clave", "POST"),
+         ("/api/usuarios", "GET"), ("/api/usuarios", "POST"), ("/api/usuarios/{usuario_id}", "PATCH"),
+         ("/api/usuarios/{usuario_id}/restablecer-clave", "POST")]
 
 
-@pytest.mark.parametrize("rol", ["admin", "compliance", "cliente", "agente", "manager_ops", "cic"])
+def test_no_hay_rutas_de_usuarios_sin_clasificar():
+    """Toda ruta de administración de usuarios debe estar en RUTAS (y por tanto exigir super_admin)."""
+    reales = {(r.path, m) for r in ru.router.routes if isinstance(r, APIRoute) for m in r.methods}
+    assert reales == set(RUTAS)
+
+
+@pytest.mark.parametrize("rol", ["admin", "compliance", "cliente", "junta", "agente", "manager_ops", "cic"])
 @pytest.mark.parametrize("ruta, metodo", RUTAS)
 def test_solo_el_super_admin_entra(rol, ruta, metodo):
     dep = _dependencia(ruta, metodo)
@@ -47,8 +55,9 @@ def test_el_super_admin_pasa(ruta, metodo):
 
 def test_el_menu_de_usuarios_solo_lo_ve_el_super_admin():
     assert "usuarios" in seg.modulos_visibles("super_admin")
-    for rol in ("admin", "compliance", "cliente"):
+    for rol in ("admin", "compliance", "cliente", "junta"):
         assert "usuarios" not in seg.modulos_visibles(rol)
+        assert "organizaciones" not in seg.modulos_visibles(rol)
 
 
 def test_clave_temporal_es_fuerte_y_el_hash_la_verifica():
@@ -67,21 +76,17 @@ def pg(monkeypatch):
         pytest.skip("Defina TX_TEST_PG_URL para probar contra PostgreSQL")
     from sqlalchemy import create_engine, text
     import db.database as bd
+    from tests._esquema import crear_esquema_minimo
     engine = create_engine(url)
-    base = pathlib.Path(__file__).resolve().parent.parent / "db" / "migrations"
+    crear_esquema_minimo(engine)
     with engine.begin() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS usuario_empresas, tx_transacciones, tx_sincronizaciones, "
-                          "tx_empresas, usuarios, clientes CASCADE"))
-        conn.execute(text("CREATE TABLE clientes (id SERIAL PRIMARY KEY, razon_social TEXT, nit TEXT, "
-                          "nivel_riesgo TEXT, estado TEXT)"))
-        conn.execute(text("CREATE TABLE usuarios (id SERIAL PRIMARY KEY, username TEXT UNIQUE, "
-                          "nombre_completo TEXT, email TEXT, password_hash TEXT, rol TEXT, activo INTEGER DEFAULT 1, "
-                          "ultimo_acceso TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"))
-        conn.execute(text((base / "035_monitoreo_transaccional.sql").read_text(encoding="utf-8")))
-        conn.execute(text((base / "037_rol_cliente.sql").read_text(encoding="utf-8")))
         conn.execute(text("INSERT INTO tx_empresas (nombre_reporte) VALUES ('Mi Empresa')"))
+        conn.execute(text("INSERT INTO usuarios (username, nombre_completo, rol, password_hash, activo, "
+                          "organizacion_id, alcance) SELECT 'cli', 'Cliente Uno', 'cliente', 'viejo', 0, id, 'empresas' "
+                          "FROM organizaciones WHERE nombre = 'Adamo'"))
         conn.execute(text("INSERT INTO usuarios (username, nombre_completo, rol, password_hash, activo) VALUES "
-                          "('cli', 'Cliente Uno', 'cliente', 'viejo', 0), ('interno', 'Interno', 'compliance', 'intacto', 1)"))
+                          "('interno', 'Interno', 'compliance', 'intacto', 1), "
+                          "('jefazo', 'Otro super', 'super_admin', 'intacto', 1)"))
         conn.execute(text("INSERT INTO usuario_empresas SELECT u.id, e.id, now() FROM usuarios u, tx_empresas e "
                           "WHERE u.username = 'cli'"))
     monkeypatch.setattr(bd, "engine", engine)
@@ -167,3 +172,146 @@ def test_la_cuenta_de_emergencia_no_hereda_el_rol_de_un_usuario_inactivo(pg, mon
     monkeypatch.setenv("ADMIN_USERNAME", "baja")
     monkeypatch.setenv("ADMIN_PASSWORD", "Clave_De_Prueba_2026!")
     assert seg.autenticar("baja", "Clave_De_Prueba_2026!").rol == "admin"
+
+
+# ---------- Alta y cambios de usuarios (multi-organización) ----------
+def _crear(datos, jefe=None):
+    return ru.crear(ru.NuevoUsuario(**datos), _Peticion(), jefe or seg.Usuario(1, "jefe", "Jefe", "super_admin"))
+
+
+def _org(engine, nombre="Adamo"):
+    from sqlalchemy import text
+    with engine.begin() as c:
+        fila = c.execute(text("SELECT id FROM organizaciones WHERE nombre = :n"), {"n": nombre}).scalar()
+        return fila or c.execute(text("INSERT INTO organizaciones (nombre) VALUES (:n) RETURNING id"),
+                                 {"n": nombre}).scalar_one()
+
+
+def _empresa(engine, nombre, org):
+    from sqlalchemy import text
+    with engine.begin() as c:
+        return c.execute(text("INSERT INTO tx_empresas (nombre_reporte, organizacion_id) VALUES (:n, :o) RETURNING id"),
+                         {"n": nombre, "o": org}).scalar_one()
+
+
+def test_crear_cliente_de_toda_la_organizacion_y_junta(pg):
+    from sqlalchemy import text
+    engine, registros = pg
+    org = _org(engine)
+    r = _crear({"username": "equipo.adamo", "nombre": "Equipo Adamo", "email": "Equipo@Adamo.co",
+                "rol": "cliente", "organizacion_id": org, "alcance": "organizacion"})
+    j = _crear({"username": "ceo.adamo", "nombre": "CEO", "email": "ceo@adamo.co", "rol": "junta", "organizacion_id": org})
+    with engine.connect() as c:
+        fila = c.execute(text("SELECT rol, organizacion_id, alcance, email, password_hash FROM usuarios WHERE id = :i"),
+                         {"i": r["id"]}).one()
+        junta = c.execute(text("SELECT rol, organizacion_id, alcance FROM usuarios WHERE id = :i"), {"i": j["id"]}).one()
+    assert fila[:4] == ("cliente", org, "organizacion", "equipo@adamo.co")
+    assert bcrypt.checkpw(r["clave_temporal"].encode(), fila[4].encode())
+    assert junta == ("junta", org, None)
+    assert r["clave_temporal"] not in str(registros)
+
+
+@pytest.mark.parametrize("datos, codigo", [
+    ({"rol": "junta"}, 400),                                                    # sin organización
+    ({"rol": "cliente", "organizacion_id": "ORG"}, 400),                         # sin alcance
+    ({"rol": "cliente", "organizacion_id": "ORG", "alcance": "empresas"}, 400),  # 'empresas' sin empresas
+    ({"rol": "compliance", "organizacion_id": "ORG"}, 400),                      # interno con organización
+    ({"rol": "super_admin"}, 400),                                               # perfil no gestionable
+    ({"rol": "junta", "organizacion_id": "ORG", "alcance": "organizacion"}, 400),
+    ({"rol": "cliente", "organizacion_id": 999999, "alcance": "organizacion"}, 404),
+])
+def test_reglas_de_alta(pg, datos, codigo):
+    engine, _ = pg
+    org = _org(engine)
+    datos = {k: (org if v == "ORG" else v) for k, v in datos.items()}
+    with pytest.raises(HTTPException) as e:
+        _crear({"username": "nuevo", "nombre": "Nuevo", "email": "n@x.co", **datos})
+    assert e.value.status_code == codigo
+
+
+def test_no_se_asignan_empresas_de_otra_organizacion(pg):
+    engine, _ = pg
+    adamo, otra = _org(engine), _org(engine, "CM Grupo Tecno")
+    ajena = _empresa(engine, "Empresa de CM", otra)
+    with pytest.raises(HTTPException) as e:
+        _crear({"username": "cli.x", "nombre": "Equis", "email": "x@x.co", "rol": "cliente",
+                "organizacion_id": adamo, "alcance": "empresas", "empresas": [ajena]})
+    assert e.value.status_code == 400
+
+
+def test_no_se_crea_en_una_organizacion_inactiva(pg):
+    from sqlalchemy import text
+    engine, _ = pg
+    org = _org(engine, "Inactiva")
+    with engine.begin() as c:
+        c.execute(text("UPDATE organizaciones SET activa = FALSE WHERE id = :o"), {"o": org})
+    with pytest.raises(HTTPException) as e:
+        _crear({"username": "cli.y", "nombre": "Ye", "email": "y@x.co", "rol": "junta", "organizacion_id": org})
+    assert e.value.status_code == 400
+
+
+def test_usuario_o_correo_repetido_responde_409(pg):
+    engine, _ = pg
+    org = _org(engine)
+    base = {"nombre": "Zeta", "rol": "junta", "organizacion_id": org}
+    _crear({"username": "unico", "email": "unico@x.co", **base})
+    for repetido in ({"username": "unico", "email": "otro@x.co"}, {"username": "otro", "email": "UNICO@x.co"}):
+        with pytest.raises(HTTPException) as e:
+            _crear({**repetido, **base})
+        assert e.value.status_code == 409
+
+
+def test_cambiar_alcance_y_empresas(pg):
+    from sqlalchemy import text
+    engine, _ = pg
+    org = _org(engine)
+    e1, e2 = _empresa(engine, "E1", org), _empresa(engine, "E2", org)
+    r = _crear({"username": "cli.z", "nombre": "Zeta", "email": "z@x.co", "rol": "cliente",
+                "organizacion_id": org, "alcance": "empresas", "empresas": [e1]})
+    jefe = seg.Usuario(1, "jefe", "Jefe", "super_admin")
+    ru.cambiar(r["id"], ru.CambioUsuario(empresas=[e1, e2]), _Peticion(), jefe)
+    with engine.connect() as c:
+        assert set(c.scalars(text("SELECT empresa_id FROM usuario_empresas WHERE usuario_id = :u"), {"u": r["id"]})) == {e1, e2}
+    ru.cambiar(r["id"], ru.CambioUsuario(alcance="organizacion"), _Peticion(), jefe)
+    with engine.connect() as c:
+        assert c.scalar(text("SELECT alcance FROM usuarios WHERE id = :u"), {"u": r["id"]}) == "organizacion"
+        assert c.scalar(text("SELECT count(*) FROM usuario_empresas WHERE usuario_id = :u"), {"u": r["id"]}) == 0
+    with pytest.raises(HTTPException):                       # volver a 'empresas' exige asignar alguna
+        ru.cambiar(r["id"], ru.CambioUsuario(alcance="empresas"), _Peticion(), jefe)
+    ru.cambiar(r["id"], ru.CambioUsuario(activo=False), _Peticion(), jefe)
+    with engine.connect() as c:
+        assert c.scalar(text("SELECT activo FROM usuarios WHERE id = :u"), {"u": r["id"]}) == 0
+
+
+def test_no_se_gestiona_a_otro_super_admin(pg):
+    engine, _ = pg
+    jefe = seg.Usuario(1, "jefe", "Jefe", "super_admin")
+    for llamada in (lambda: ru.restablecer(_id(engine, "jefazo"), _Peticion(), jefe),
+                    lambda: ru.cambiar(_id(engine, "jefazo"), ru.CambioUsuario(activo=False), _Peticion(), jefe)):
+        with pytest.raises(HTTPException) as e:
+            llamada()
+        assert e.value.status_code == 404
+
+
+def test_listado_trae_organizacion_y_alcance(pg):
+    engine, _ = pg
+    jefe = seg.Usuario(1, "jefe", "Jefe", "super_admin")
+    lista = {x["username"]: x for x in ru.listar(jefe)["usuarios"]}
+    assert set(lista) == {"cli", "interno"}                   # el otro super_admin no aparece
+    assert lista["cli"]["organizacion"] == "Adamo" and lista["cli"]["alcance"] == "empresas"
+    assert lista["interno"]["organizacion"] is None
+
+
+def test_organizacion_desactivada_saca_a_sus_usuarios(pg, monkeypatch):
+    """Login y sesión abierta: ninguno funciona si la organización del usuario está inactiva."""
+    from sqlalchemy import text
+    engine, _ = pg
+    org = _org(engine, "Saliente")
+    r = _crear({"username": "ceo.sal", "nombre": "CEO", "email": "ceo@sal.co", "rol": "junta", "organizacion_id": org})
+    monkeypatch.setenv("ADMIN_PASSWORD", "")
+    u = seg.autenticar("ceo.sal", r["clave_temporal"])
+    assert u is not None and u.organizacion_id == org and seg.sigue_activo(u)
+    with engine.begin() as c:
+        c.execute(text("UPDATE organizaciones SET activa = FALSE WHERE id = :o"), {"o": org})
+    assert seg.sigue_activo(u) is False
+    assert seg.autenticar("ceo.sal", r["clave_temporal"]) is None

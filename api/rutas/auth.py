@@ -15,9 +15,24 @@ class Credenciales(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+def _nombre_organizacion(organizacion_id: int | None) -> str | None:
+    if organizacion_id is None:
+        return None
+    try:
+        from sqlalchemy import text
+        from db.database import engine
+        with engine.connect() as conn:
+            return conn.scalar(text("SELECT nombre FROM organizaciones WHERE id = :id"), {"id": organizacion_id})
+    except Exception:
+        return None
+
+
 def _perfil(u: seg.Usuario) -> dict:
     return {"id": u.id, "username": u.username, "nombre": u.nombre or u.username, "rol": u.rol,
-            "email": u.email, "modulos": seg.modulos_visibles(u.rol)}
+            "email": u.email, "modulos": seg.modulos_visibles(u.rol),
+            # Solo externos: su organización (los internos ven todas y eligen en pantalla)
+            "organizacion": ({"id": u.organizacion_id, "nombre": _nombre_organizacion(u.organizacion_id)}
+                             if u.organizacion_id is not None else None)}
 
 
 @router.post("/login")

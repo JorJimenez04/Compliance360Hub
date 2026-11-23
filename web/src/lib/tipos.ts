@@ -1,15 +1,35 @@
 // Contratos de la API (api/rutas/*.py)
 
-export type Modulo = "monitoreo" | "auditoria" | "usuarios";
+export type Modulo = "monitoreo" | "auditoria" | "usuarios" | "organizaciones" | "junta";
 
 export interface Perfil {
   id: number; username: string; nombre: string; rol: string; email: string | null; modulos: Modulo[];
+  /** Solo usuarios externos (cliente, junta): su organización. Los internos ven todas. */
+  organizacion: { id: number; nombre: string | null } | null;
+}
+
+export const ROLES_EXTERNOS = ["cliente", "junta"];
+
+export interface Organizacion {
+  id: number; nombre: string; nit?: string | null; activa?: boolean; notas?: string | null;
+  empresas?: number; clientes?: number; usuarios?: number; creada?: string | null;
+}
+
+export type PerfilGestionado = "cliente" | "junta" | "compliance";
+export type Alcance = "organizacion" | "empresas";
+
+export interface UsuarioGestionado {
+  id: number; username: string; nombre: string; email: string | null; rol: PerfilGestionado; activo: boolean;
+  ultimo_acceso: string | null; organizacion_id: number | null; organizacion: string | null;
+  alcance: Alcance | null; empresas_ids: number[]; empresas: string;
 }
 
 export interface Empresa {
   id: number; nombre_reporte: string; nombre: string; activa: boolean; enlazada: boolean;
   cliente_id: number | null; razon_social: string | null; nit: string | null;
   nivel_riesgo: string | null; transacciones: number | null;
+  /** Solo para internos (al cliente llega null) */
+  organizacion_id: number | null;
 }
 
 export interface Resumen { ultima_carga: string | null; empresas: Empresa[]; puede_cargar: boolean }
@@ -89,4 +109,4 @@ export interface Nube {
   archivos: { fecha: string; empresa: string | null; nombre: string; resultado: string; mensaje: string }[];
 }
 
-export interface ClienteOpcion { id: number; razon_social: string; nit: string | null; nivel_riesgo: string | null }
+export interface ClienteOpcion { id: number; razon_social: string; nit: string | null; nivel_riesgo: string | null; organizacion_id: number }

@@ -262,16 +262,10 @@ def engine_pg():
     url = os.getenv("TX_TEST_PG_URL")
     if not url:
         pytest.skip("Defina TX_TEST_PG_URL para probar la sincronización contra PostgreSQL")
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import create_engine
+    from tests._esquema import crear_esquema_minimo
     engine = create_engine(url)
-    migracion = pathlib.Path(__file__).resolve().parent.parent / "db" / "migrations" / "035_monitoreo_transaccional.sql"
-    with engine.begin() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS tx_transacciones, tx_sincronizaciones, tx_empresas CASCADE"))
-        # La migración 035 referencia clientes (027); en una base vacía basta una mínima
-        conn.execute(text(
-            "CREATE TABLE IF NOT EXISTS clientes (id SERIAL PRIMARY KEY, razon_social TEXT, "
-            "nit TEXT, nivel_riesgo TEXT, estado TEXT)"))
-        conn.execute(text(migracion.read_text(encoding="utf-8")))
+    crear_esquema_minimo(engine)   # 035–038 sobre clientes y usuarios mínimos
     yield engine
     engine.dispose()
 

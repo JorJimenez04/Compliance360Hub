@@ -21,7 +21,9 @@ import pandas as pd
 from sqlalchemy import Engine
 
 from core.monitoreo_tx.characterization.base_characterization import caracterizar_cliente_gafi
-from core.monitoreo_tx.config import ROL_CLIENTE, ROLES_CARGA, ROLES_CONSULTA, ROLES_MONITOREO
+from core.monitoreo_tx.config import (
+    ALCANCE_ORGANIZACION, ROL_CLIENTE, ROLES_CARGA, ROLES_CONSULTA, ROLES_MONITOREO,
+)
 from core.monitoreo_tx.domain import metricas
 from core.monitoreo_tx.domain.continuidad import Continuidad, verificar_continuidad
 from core.monitoreo_tx.domain.entidades import EmpresaVista, FiltrosTransacciones, OpcionesFiltro
@@ -44,7 +46,7 @@ def puede_cargar(user: dict | None) -> bool:
 
 
 def es_cliente(user: dict | None) -> bool:
-    """Usuario externo: solo ve las empresas que tiene asignadas (usuario_empresas)."""
+    """Usuario externo: solo ve empresas de SU organización (y, con alcance 'empresas', solo las asignadas)."""
     return bool(user) and user.get("rol") == ROL_CLIENTE
 
 
@@ -94,42 +96,67 @@ class MonitoreoService:
         return ultima["id"] if ultima else 0
 
     # ---------- Empresas ----------
-    def empresas(self, user: dict, solo_activas: bool = True) -> list[EmpresaVista]:
+    def _cliente_puede_ver(self, user: dict, empresa: EmpresaVista) -> bool:
+        """Alcance de un usuario «cliente». Ante cualquier dato faltante, niega.
+
+        1. La empresa debe ser de su organización (sin organización no ve nada).
+        2. Con alcance 'organizacion' ve todas las de su organización; con cualquier
+           otro valor, solo las asignadas en usuario_empresas."""
+        org = user.get("organizacion_id")
+        if org is None or empresa.organizacion_id != org:
+            return False
+        if user.get("alcance") == ALCANCE_ORGANIZACION:
+            return True
+        return empresa.id in self.empresas_repo.ids_de_usuario(user["id"])
+
+    def empresas(self, user: dict, solo_activas: bool = True,
+                 organizacion_id: int | None = None) -> list[EmpresaVista]:
+        """Internos: todas, o las de `organizacion_id` si se indica. Cliente: las de su alcance
+        (el parámetro se ignora: un cliente nunca elige organización)."""
         _exigir(user, ROLES_CONSULTA)
-        todas = self.empresas_repo.listar(solo_activas=solo_activas)
         if es_cliente(user):
-            permitidas = self.empresas_repo.ids_de_usuario(user["id"])
-            return [e for e in todas if e.id in permitidas]
-        return todas
+            org = user.get("organizacion_id")
+            if org is None:
+                return []
+            return [e for e in self.empresas_repo.listar(solo_activas=solo_activas, organizacion_id=org)
+                    if self._cliente_puede_ver(user, e)]
+        return self.empresas_repo.listar(solo_activas=solo_activas, organizacion_id=organizacion_id)
 
     def _empresa(self, user: dict, empresa_id: int) -> EmpresaVista:
         """Única puerta de entrada a los datos de una empresa: aquí se aplica el alcance del cliente.
 
-        Un cliente que pide una empresa que no es suya recibe «no existe», igual que si
-        el id no existiera: no se confirma que esa empresa esté en el sistema."""
+        Un cliente que pide una empresa que no es suya (de otra organización o no asignada)
+        recibe «no existe», igual que si el id no existiera: no se confirma que esté en el sistema."""
         _exigir(user, ROLES_CONSULTA)
-        if es_cliente(user) and empresa_id not in self.empresas_repo.ids_de_usuario(user["id"]):
-            raise NoEncontrado("La empresa no existe.")
         empresa = self.empresas_repo.obtener(empresa_id)
-        if empresa is None:
+        if empresa is None or (es_cliente(user) and not self._cliente_puede_ver(user, empresa)):
             raise NoEncontrado("La empresa no existe.")
         return empresa
 
-    def conteo_por_empresa(self, user: dict) -> dict[str, int]:
+    def conteo_por_empresa(self, user: dict, organizacion_id: int | None = None) -> dict[str, int]:
         _exigir(user, ROLES_CONSULTA)
         conteo = self.transacciones.conteo_por_cliente()
-        if es_cliente(user):
-            propias = {e.nombre_reporte for e in self.empresas(user, solo_activas=False)}
+        if es_cliente(user) or organizacion_id is not None:
+            propias = {e.nombre_reporte for e in self.empresas(user, solo_activas=False,
+                                                                organizacion_id=organizacion_id)}
             return {nombre: n for nombre, n in conteo.items() if nombre in propias}
         return conteo
 
-    def clientes_disponibles(self, user: dict) -> list[dict]:
+    def clientes_disponibles(self, user: dict, organizacion_id: int | None = None) -> list[dict]:
         _exigir(user, ROLES_CARGA)
-        return self.empresas_repo.clientes_disponibles()
+        return self.empresas_repo.clientes_disponibles(organizacion_id)
 
     def enlazar_cliente(self, user: dict, empresa_id: int, cliente_id: int | None) -> None:
         _exigir(user, ROLES_CARGA)
         empresa = self._empresa(user, empresa_id)
+        if cliente_id is not None:
+            org_cliente = self.empresas_repo.organizacion_de_cliente(cliente_id)
+            if org_cliente is None:
+                raise NoEncontrado("El cliente no existe.")
+            if org_cliente != empresa.organizacion_id:
+                from core.monitoreo_tx.domain.errores import ErrorValidacion
+                raise ErrorValidacion("El cliente pertenece a otra organización: solo se puede enlazar "
+                                      "con clientes de la misma organización de la empresa.")
         self.empresas_repo.enlazar(empresa_id, cliente_id)
         registrar_auditoria(
             user, "UPDATE",
@@ -137,6 +164,26 @@ class MonitoreoService:
             entidad_id=empresa_id,
             valores_nuevos={"cliente_id": cliente_id, "cliente_id_anterior": empresa.cliente_id},
             entidad="tx_empresas",
+        )
+
+    def mover_empresa(self, user: dict, empresa_id: int, organizacion_id: int) -> None:
+        """Asignar una empresa de monitoreo a otra organización: solo super_admin.
+        Es la operación más delicada del módulo (cambia quién ve esos datos)."""
+        _exigir(user, frozenset({"super_admin"}))
+        empresa = self._empresa(user, empresa_id)
+        if empresa.organizacion_id == organizacion_id:
+            return
+        r = self.empresas_repo.mover_a_organizacion(empresa_id, organizacion_id)
+        if not r["ok"]:
+            raise NoEncontrado("La organización no existe o está inactiva.")
+        registrar_auditoria(
+            user, "UPDATE",
+            f"Monitoreo TX: empresa «{empresa.nombre_reporte}» pasa de la organización "
+            f"{empresa.organizacion_id} a la {organizacion_id} (se quitó el enlace con su cliente y "
+            f"{r['asignaciones_quitadas']} asignaciones de usuarios de otra organización)",
+            entidad_id=empresa_id, entidad="tx_empresas",
+            valores_nuevos={"organizacion_id": organizacion_id, "organizacion_id_anterior": empresa.organizacion_id,
+                            "cliente_id_anterior": empresa.cliente_id},
         )
 
     def cambiar_estado(self, user: dict, empresa_id: int, activa: bool) -> None:
