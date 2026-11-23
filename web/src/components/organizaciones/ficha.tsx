@@ -9,13 +9,13 @@ import { useDatos } from "@/lib/useDatos";
 import { useSesion } from "@/lib/sesion";
 import type { Catalogo, Ficha, Paquete } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
-import SelectorModelos from "@/components/cumplimiento/selector-modelos";
+import ActividadYModelos from "@/components/cumplimiento/actividades";
 import VistaPaquete from "@/components/cumplimiento/paquete";
 
-type Edicion = Pick<Ficha, "tipo_persona" | "servicios" | "modelos_negocio" | "regimen" | "nivel_riesgo" | "fecha_calificacion"
+type Edicion = Pick<Ficha, "tipo_persona" | "servicios" | "modelos_negocio" | "actividades_ciiu" | "regimen" | "nivel_riesgo" | "fecha_calificacion"
   | "proxima_revision" | "oficial_principal_id" | "oficial_suplente" | "fecha_designacion" | "acta_designacion">;
 
-const CAMPOS: (keyof Edicion)[] = ["tipo_persona", "servicios", "modelos_negocio", "regimen", "nivel_riesgo",
+const CAMPOS: (keyof Edicion)[] = ["tipo_persona", "servicios", "modelos_negocio", "actividades_ciiu", "regimen", "nivel_riesgo",
   "fecha_calificacion", "proxima_revision", "oficial_principal_id", "oficial_suplente", "fecha_designacion", "acta_designacion"];
 
 export default function FichaOrganizacion({ id, embebida = false }: { id: number; embebida?: boolean }) {
@@ -131,9 +131,11 @@ export default function FichaOrganizacion({ id, embebida = false }: { id: number
       </div>
 
       <Tarjeta>
-        <TituloTarjeta titulo="Modelos de negocio" descripcion="Definen el riesgo sugerido, la documentación exigida y las señales de alerta del monitoreo." />
+        <TituloTarjeta titulo="Actividad económica y modelos de negocio" descripcion="Elija las actividades CIIU del RUT: aplican los modelos automáticamente. Agregue otros a mano si hace falta. Los modelos definen el riesgo sugerido, la documentación exigida y las señales de alerta." />
         <div className="px-5 pb-5 pt-3">
-          <SelectorModelos modelos={c.modelos} valor={ed.modelos_negocio} onCambio={(v) => poner({ modelos_negocio: v })} disabled={!puedeEditar} />
+          <ActividadYModelos modelos={c.modelos} documentos={c.documentos} actividades={ed.actividades_ciiu} idBase="org-ciiu"
+            modelosNegocio={ed.modelos_negocio} disabled={!puedeEditar}
+            onCambio={({ actividades, modelos }) => poner({ actividades_ciiu: actividades, modelos_negocio: modelos })} />
         </div>
       </Tarjeta>
 

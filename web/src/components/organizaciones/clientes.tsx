@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, RefreshCw, UserPlus, Users } from "lucide-react";
+import { AlertTriangle, Plus, RefreshCw, UserPlus, Users } from "lucide-react";
 import { Aviso, Boton, Entrada, Esqueleto, Insignia, Tarjeta, TituloTarjeta, Vacio, tonoRiesgo } from "@/components/ui/basicos";
 import { enviar, ErrorApi } from "@/lib/api";
 import { useDatos } from "@/lib/useDatos";
 import { entero, fecha } from "@/lib/formato";
 import type { ClienteFila, EmpresaSinCliente } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
+import NuevoCliente from "./nuevo-cliente";
 
 export default function ClientesOrganizacion({ organizacionId }: { organizacionId: number }) {
   const { datos, error, recargar } = useDatos<{ clientes: ClienteFila[]; empresas_sin_cliente: EmpresaSinCliente[] }>(
@@ -18,6 +19,7 @@ export default function ClientesOrganizacion({ organizacionId }: { organizacionI
   const [trabajando, setTrabajando] = useState<"crear" | "evaluar" | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [fallo, setFallo] = useState<string | null>(null);
+  const [nuevo, setNuevo] = useState(false);
 
   async function crear() {
     setTrabajando("crear"); setFallo(null); setAviso(null);
@@ -50,6 +52,8 @@ export default function ClientesOrganizacion({ organizacionId }: { organizacionI
       {fallo && <Aviso tono="critico" icono={<AlertTriangle className="size-4" />}>{fallo}</Aviso>}
       {aviso && <Aviso tono="ok">{aviso}</Aviso>}
 
+      {nuevo && <NuevoCliente organizacionId={organizacionId} onCerrar={() => setNuevo(false)} />}
+
       {pendientes.length > 0 && (
         <Tarjeta className="border-alerta/30">
           <TituloTarjeta titulo={`${pendientes.length} empresas monitoreadas sin ficha de cliente`}
@@ -80,9 +84,10 @@ export default function ClientesOrganizacion({ organizacionId }: { organizacionI
           accion={<div className="flex gap-2">
             <Entrada aria-label="Buscar cliente" placeholder="Buscar por nombre o NIT…" className="w-56" value={buscar} onChange={(e) => setBuscar(e.target.value)} />
             <Boton cargando={trabajando === "evaluar"} onClick={evaluar} title="Revisa los últimos 3 meses de cada empresa"><RefreshCw className="size-4" aria-hidden />Evaluar monitoreo</Boton>
+            {!nuevo && <Boton variante="primario" onClick={() => setNuevo(true)}><Plus className="size-4" aria-hidden />Nuevo cliente</Boton>}
           </div>} />
         {!clientes.length ? <Vacio icono={<Users className="size-8" />} titulo={datos.clientes.length ? "Ningún cliente coincide" : "Aún no hay clientes"}
-          texto={datos.clientes.length ? undefined : "Créelos desde las empresas monitoreadas."} />
+          texto={datos.clientes.length ? undefined : "Créelos desde las empresas monitoreadas o con «Nuevo cliente»."} />
           : (
             <div className="overflow-x-auto px-2 pb-3 pt-3">
               <table className="w-full min-w-[820px] text-[13px]">
@@ -95,7 +100,8 @@ export default function ClientesOrganizacion({ organizacionId }: { organizacionI
                     <tr key={c.id} className="border-t border-borde/70 hover:bg-panel-2/60">
                       <td className="px-3 py-3">
                         <Link href={`/organizaciones/${organizacionId}/clientes/${c.id}`} className="font-medium text-acento hover:underline">{c.razon_social}</Link>
-                        <p className="text-xs text-texto-3">{c.nit ? `NIT ${c.nit}` : <span className="text-alerta">NIT pendiente</span>}</p>
+                        <p className="text-xs text-texto-3">{c.nit ? `NIT ${c.nit}` : <span className="text-alerta">NIT pendiente</span>}
+                          {c.actividades_ciiu.length > 0 ? <> · CIIU {c.actividades_ciiu.join(", ")}</> : <span className="text-alerta"> · CIIU pendiente</span>}</p>
                       </td>
                       <td className="px-3 py-3"><Insignia tono={tonoRiesgo(c.nivel_riesgo)}>{c.nivel_riesgo}</Insignia></td>
                       <td className="px-3 py-3 text-texto-2">{c.estado}</td>

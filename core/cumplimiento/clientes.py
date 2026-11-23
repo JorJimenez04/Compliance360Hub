@@ -13,6 +13,7 @@ import pandas as pd
 from sqlalchemy import Engine, text
 
 from core.cumplimiento import catalogo as cat
+from core.cumplimiento import ciiu
 from core.cumplimiento.alertas import ABIERTAS
 from core.monitoreo_tx.domain import metricas
 from core.monitoreo_tx.domain.entidades import FiltrosTransacciones
@@ -21,7 +22,7 @@ from core.monitoreo_tx.repositorio import CarteraRepo
 NIVELES_CLIENTE = ("Sin calificar", *cat.NIVELES)
 ESTADOS_CLIENTE = ("Prospecto", "Activo", "Suspendido", "Terminado")
 CAMPOS_EDITABLES = ("razon_social", "nit", "tipo_persona", "modelos_negocio", "nivel_riesgo", "estado",
-                    "sector_ciiu", "pais_constitucion", "sitio_web", "proxima_revision", "perfil_volumen_mensual",
+                    "actividades_ciiu", "sector_ciiu", "pais_constitucion", "sitio_web", "proxima_revision", "perfil_volumen_mensual",
                     "perfil_operaciones_mes", "perfil_ticket_promedio", "perfil_paises", "notas")
 
 
@@ -29,10 +30,33 @@ class ErrorCliente(ValueError):
     pass
 
 
+def validar_actividades(codigos: list[str] | None) -> list[str]:
+    """Las cuatro actividades del RUT, en orden (principal primero), sin repetidos y existentes."""
+    v = [c.strip() for c in (codigos or []) if c and c.strip()]
+    if len(v) != len(set(v)):
+        raise ErrorCliente("Hay actividades CIIU repetidas.")
+    if len(v) > 4:
+        raise ErrorCliente("El RUT admite máximo cuatro actividades: principal, secundaria y otras dos.")
+    malos = [c for c in v if not ciiu.existe(c)]
+    if malos:
+        raise ErrorCliente(f"Códigos CIIU no válidos: {', '.join(malos)}")
+    return v
+
+
+def _texto_ciiu(actividades: list[str]) -> str | None:
+    a = ciiu.actividad(actividades[0]) if actividades else None
+    return f"{a.codigo} - {a.descripcion}"[:120] if a else None
+
+
+def actividades_detalle(codigos: list[str]) -> list[dict]:
+    return [a.como_dict() for a in (ciiu.actividad(c) for c in codigos) if a]
+
+
 def listar(engine: Engine, organizacion_id: int) -> list[dict]:
     with engine.connect() as conn:
         filas = conn.execute(text(
             "SELECT c.id, c.razon_social, c.nit, c.nivel_riesgo, c.estado, c.modelos_negocio, c.proxima_revision, "
+            "  c.actividades_ciiu, "
             "  COALESCE(json_agg(json_build_object('id', e.id, 'nombre', e.nombre_reporte) ORDER BY e.nombre_reporte) "
             "           FILTER (WHERE e.id IS NOT NULL), '[]') AS empresas, "
             "  (SELECT count(*) FROM cmp_alertas a JOIN tx_empresas x ON x.id = a.empresa_id "
@@ -42,7 +66,8 @@ def listar(engine: Engine, organizacion_id: int) -> list[dict]:
             "FROM clientes c LEFT JOIN tx_empresas e ON e.cliente_id = c.id "
             "WHERE c.organizacion_id = :o GROUP BY c.id ORDER BY lower(c.razon_social)"),
             {"o": organizacion_id, "ab": list(ABIERTAS)}).mappings().all()
-    return [{**dict(f), "modelos_negocio": list(f["modelos_negocio"] or [])} for f in filas]
+    return [{**dict(f), "modelos_negocio": list(f["modelos_negocio"] or []),
+             "actividades_ciiu": list(f["actividades_ciiu"] or [])} for f in filas]
 
 
 def empresas_sin_cliente(engine: Engine, organizacion_id: int) -> list[dict]:
@@ -81,7 +106,7 @@ def obtener(engine: Engine, cliente_id: int) -> dict | None:
     with engine.connect() as conn:
         f = conn.execute(text(
             "SELECT c.id, c.organizacion_id, o.nombre AS organizacion, c.razon_social, c.nit, c.tipo_persona, "
-            "c.modelos_negocio, c.nivel_riesgo, c.estado, c.sector_ciiu, c.pais_constitucion, c.sitio_web, "
+            "c.modelos_negocio, c.actividades_ciiu, c.nivel_riesgo, c.estado, c.sector_ciiu, c.pais_constitucion, c.sitio_web, "
             "c.proxima_revision, c.fecha_ultima_calificacion, c.es_pep, c.en_listas_restriccion, "
             "c.perfil_volumen_mensual, c.perfil_operaciones_mes, c.perfil_ticket_promedio, c.perfil_paises, "
             "c.perfil_actualizado, c.notas, c.created_at "
@@ -96,12 +121,14 @@ def obtener(engine: Engine, cliente_id: int) -> dict | None:
     for k in ("perfil_volumen_mensual", "perfil_ticket_promedio"):
         d[k] = float(d[k]) if d[k] is not None else None
     d["modelos_negocio"] = list(d["modelos_negocio"] or [])
+    d["actividades_ciiu"] = list(d["actividades_ciiu"] or [])
+    d["actividades"] = actividades_detalle(d["actividades_ciiu"])
     d["perfil_paises"] = list(d["perfil_paises"] or [])
     d["empresas"] = [dict(e) for e in empresas]
     return d
 
 
-def actualizar(engine: Engine, cliente_id: int, cambios: dict) -> dict:
+def _validar(cambios: dict) -> dict:
     valores: dict = {}
     for campo, v in cambios.items():
         if campo not in CAMPOS_EDITABLES:
@@ -121,11 +148,38 @@ def actualizar(engine: Engine, cliente_id: int, cambios: dict) -> dict:
             malos = [m for m in v if cat.modelo(m) is None]
             if malos:
                 raise ErrorCliente(f"Modelos de negocio no válidos: {', '.join(malos)}")
+        if campo == "actividades_ciiu":
+            v = validar_actividades(v)
+            valores["sector_ciiu"] = _texto_ciiu(v)
+        if campo == "sector_ciiu" and "actividades_ciiu" in cambios:
+            continue                      # lo define la actividad principal
         if campo == "perfil_paises":
             v = sorted({p.strip() for p in (v or []) if p and p.strip()})
         if campo.startswith("perfil_") and campo != "perfil_paises" and v is not None and float(v) < 0:
             raise ErrorCliente("El perfil declarado no admite valores negativos.")
         valores[campo] = v
+    return valores
+
+
+def crear(engine: Engine, organizacion_id: int, datos: dict, usuario: str) -> int:
+    """Cliente creado a mano (p. ej. un prospecto que aún no transa). Devuelve su id."""
+    valores = _validar({"estado": "Prospecto", "tipo_persona": cat.PJ, **datos})
+    if not valores.get("razon_social"):
+        raise ErrorCliente("La razón social es obligatoria.")
+    if valores.get("nivel_riesgo") in cat.NIVELES:
+        valores["fecha_ultima_calificacion"] = date.today()
+    if any(k.startswith("perfil_") for k in valores):
+        valores["perfil_actualizado"] = date.today()
+    columnas = list(valores)                # claves de una lista fija, no de la petición
+    with engine.begin() as conn:
+        return conn.execute(text(
+            f"INSERT INTO clientes ({', '.join(columnas)}, organizacion_id, creado_por) "
+            f"VALUES ({', '.join(':' + c for c in columnas)}, :organizacion_id, :creado_por) RETURNING id"),
+            {**valores, "organizacion_id": organizacion_id, "creado_por": usuario}).scalar_one()
+
+
+def actualizar(engine: Engine, cliente_id: int, cambios: dict) -> dict:
+    valores = _validar(cambios)
     if not valores:
         return obtener(engine, cliente_id)
     if any(k.startswith("perfil_") for k in valores):

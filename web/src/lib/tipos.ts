@@ -122,7 +122,19 @@ export interface ModeloCat {
   codigo: string; grupo: string; nombre: string; riesgo_sugerido: Nivel; regimenes: string[]; documentos: string[];
   monitoreo: ("fiat" | "cripto")[]; senales_alerta: string[]; por_que: string;
 }
-export interface Catalogo { niveles: Nivel[]; servicios: ServicioCat[]; regimenes: RegimenCat[]; modelos: ModeloCat[] }
+export interface Catalogo {
+  niveles: Nivel[]; servicios: ServicioCat[]; regimenes: RegimenCat[]; modelos: ModeloCat[];
+  documentos: { codigo: string; nombre: string }[];
+}
+
+/** Actividad económica CIIU Rev. 4 A.C. y los modelos de negocio que sugiere (GET /api/catalogo/ciiu). */
+export interface ActividadCiiu {
+  codigo: string; descripcion: string; seccion: string; division: string | null;
+  principal: string | null; sugeridos: string[];
+}
+export interface CatalogoCiiu {
+  fuente: string; secciones: Record<string, string>; divisiones: Record<string, string>; actividades: ActividadCiiu[];
+}
 
 export interface DocumentoPaquete {
   codigo: string; nombre: string; carpeta: string; aporta: "cliente" | "oficial" | "ambos";
@@ -136,7 +148,8 @@ export interface Paquete {
 
 export interface Ficha {
   id: number; nombre: string; nit: string | null; activa: boolean; notas: string | null;
-  tipo_persona: "juridica" | "natural"; servicios: string[]; modelos_negocio: string[]; regimen: string | null;
+  tipo_persona: "juridica" | "natural"; servicios: string[]; modelos_negocio: string[]; actividades_ciiu: string[];
+  regimen: string | null;
   nivel_riesgo: Nivel | "Sin calificar"; fecha_calificacion: string | null; proxima_revision: string | null;
   oficial_principal_id: number | null; oficial_principal: string | null; oficial_suplente: string | null;
   fecha_designacion: string | null; acta_designacion: string | null;
@@ -161,7 +174,8 @@ export type Prioridad = "Crítica" | "Alta" | "Media" | "Baja";
 
 export interface ClienteFila {
   id: number; razon_social: string; nit: string | null; nivel_riesgo: string; estado: string;
-  modelos_negocio: string[]; proxima_revision: string | null; empresas: { id: number; nombre: string }[];
+  modelos_negocio: string[]; actividades_ciiu: string[]; proxima_revision: string | null;
+  empresas: { id: number; nombre: string }[];
   alertas_abiertas: number; alertas_altas: number;
 }
 export interface EmpresaSinCliente { id: number; nombre: string; transacciones: number }
@@ -183,6 +197,7 @@ export interface AlertaDetalle extends AlertaCaso { eventos: EventoAlerta[]; tra
 export interface FichaCliente {
   id: number; organizacion_id: number; organizacion: string; razon_social: string; nit: string | null;
   tipo_persona: "juridica" | "natural"; modelos_negocio: string[]; nivel_riesgo: string; estado: string;
+  actividades_ciiu: string[]; actividades: ActividadCiiu[];
   sector_ciiu: string | null; pais_constitucion: string | null; sitio_web: string | null;
   proxima_revision: string | null; fecha_ultima_calificacion: string | null; notas: string | null;
   perfil_volumen_mensual: number | null; perfil_operaciones_mes: number | null; perfil_ticket_promedio: number | null;

@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 
 from api import seguridad as seg
 from core.cumplimiento import catalogo as cat
+from core.cumplimiento import ciiu
 from core.monitoreo_tx.config import ROLES_MONITOREO
 
 router = APIRouter(prefix="/api/organizaciones", tags=["organizaciones"])
@@ -93,6 +94,7 @@ class CambioOrganizacion(BaseModel):
     tipo_persona: str | None = None
     servicios: list[str] | None = Field(None, max_length=30)
     modelos_negocio: list[str] | None = Field(None, max_length=30)
+    actividades_ciiu: list[str] | None = Field(None, max_length=4)
     regimen: str | None = None
     nivel_riesgo: str | None = None
     fecha_calificacion: date | None = None
@@ -120,6 +122,12 @@ def _validar_ficha(cambios: dict) -> dict:
         if malos:
             raise HTTPException(400, f"Modelos de negocio no válidos: {', '.join(malos)}")
         v["modelos_negocio"] = list(dict.fromkeys(cambios["modelos_negocio"] or []))
+    if "actividades_ciiu" in cambios:
+        from core.cumplimiento.clientes import ErrorCliente, validar_actividades
+        try:
+            v["actividades_ciiu"] = validar_actividades(cambios["actividades_ciiu"])
+        except ErrorCliente as e:
+            raise HTTPException(400, str(e))
     if "regimen" in cambios:
         if cambios["regimen"] is not None and cat.regimen(cambios["regimen"]) is None:
             raise HTTPException(400, "Régimen no válido.")
@@ -181,7 +189,7 @@ def cambiar(organizacion_id: int, datos: CambioOrganizacion, request: Request,
 # =========================
 # Ficha y paquete de vinculación
 # =========================
-_COLUMNAS_FICHA = ("tipo_persona", "servicios", "modelos_negocio", "regimen", "nivel_riesgo", "fecha_calificacion",
+_COLUMNAS_FICHA = ("tipo_persona", "servicios", "modelos_negocio", "actividades_ciiu", "regimen", "nivel_riesgo", "fecha_calificacion",
                    "proxima_revision", "oficial_principal_id", "oficial_suplente", "fecha_designacion",
                    "acta_designacion")
 
@@ -208,6 +216,7 @@ def ficha(organizacion_id: int, u: seg.Usuario = Depends(interno)) -> dict:
         "id": f["id"], "nombre": f["nombre"], "nit": f["nit"], "activa": bool(f["activa"]), "notas": f["notas"],
         **{k: _iso(f[k]) for k in _COLUMNAS_FICHA},
         "servicios": list(f["servicios"] or []), "modelos_negocio": modelos,
+        "actividades_ciiu": list(f["actividades_ciiu"] or []),
         "oficial_principal": f["oficial_principal"],
         "riesgo_sugerido": cat.riesgo_sugerido(modelos),
         "monitoreo_sugerido": list(cat.monitoreo_sugerido(modelos)),
@@ -248,6 +257,12 @@ def paquete_organizacion(organizacion_id: int, u: seg.Usuario = Depends(interno)
 @router_catalogo.get("")
 def catalogo(u: seg.Usuario = Depends(interno)) -> dict:
     return cat.como_dict()
+
+
+@router_catalogo.get("/ciiu")
+def actividades_ciiu(u: seg.Usuario = Depends(interno)) -> dict:
+    """Lista oficial CIIU Rev. 4 A.C. (DANE 2022 + códigos DIAN) con los modelos que sugiere cada actividad."""
+    return ciiu.como_dict()
 
 
 @router_catalogo.get("/paquete")
