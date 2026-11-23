@@ -377,3 +377,32 @@ def a_formato_legacy(df: pd.DataFrame) -> pd.DataFrame:
         "BENEFICIARIO": df["beneficiario"],
         "BANCO": df["banco"],
     })
+
+
+# =========================
+# Cartera (varias empresas a la vez)
+# =========================
+def kpis_por_cliente(totales: pd.DataFrame) -> dict[str, KPIs]:
+    """totales con columna «cliente» además de tipo_transaccion, exitosa, transacciones y monto."""
+    if totales.empty:
+        return {}
+    return {c: kpis_desde_totales(g) for c, g in totales.groupby("cliente")}
+
+
+def serie_desde_diario(diario: pd.DataFrame, granularidad: str, desde: date, hasta: date) -> pd.DataFrame:
+    """
+    Monto y número de pagos exitosos por período a partir del agregado diario
+    (fecha, tipo_transaccion, exitosa, transacciones, monto). Incluye los períodos sin
+    pagos entre desde y hasta, así dos series con el mismo rango quedan alineadas.
+    """
+    vacio = pd.DataFrame({"fecha": pd.to_datetime([]), "monto": [], "transacciones": []})
+    if not diario.empty:
+        mov = diario["tipo_transaccion"].map(tipo_movimiento)
+        ok = diario[(mov == PAGO) & diario["exitosa"].fillna(False).astype(bool)]
+        if not ok.empty:
+            vacio = ok.assign(fecha=pd.to_datetime(ok["fecha"]))[["fecha", "monto", "transacciones"]]
+    diaria = vacio.groupby("fecha")[["monto", "transacciones"]].sum()
+    diaria = diaria.reindex(pd.date_range(pd.Timestamp(desde), pd.Timestamp(hasta), freq="D"), fill_value=0)
+    r = diaria.resample(FRECUENCIAS[granularidad], label="left", closed="left").sum()
+    return pd.DataFrame({"periodo": r.index, "monto": r["monto"].astype(float).values,
+                         "pagos": r["transacciones"].astype(int).values})

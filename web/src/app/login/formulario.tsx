@@ -21,7 +21,7 @@ export default function FormularioLogin() {
     try {
       await enviar("/api/auth/login", { username: usuario.trim(), password: clave });
       const sig = params.get("siguiente");
-      router.replace(sig && sig.startsWith("/") && !sig.startsWith("//") ? sig : "/monitoreo");
+      router.replace(sig && sig.startsWith("/") && !sig.startsWith("//") ? sig : "/");   // "/" lleva a cada perfil a su primer módulo
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo ingresar.");
       setClave("");

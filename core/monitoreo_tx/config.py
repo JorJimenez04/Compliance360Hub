@@ -32,5 +32,14 @@ ROLES_CARGA = frozenset({"super_admin", "admin", "compliance"})
 # Rol externo: el cliente de AdamoPay. Solo consulta el tablero y las transacciones
 # de SUS empresas (tabla usuario_empresas). No ve riesgo, cargas, enlaces ni exportes.
 ROL_CLIENTE = "cliente"
-# Quienes pueden consultar tablero y transacciones (internos: todas las empresas; cliente: las suyas)
+# Quienes pueden consultar tablero y transacciones (internos: todas las empresas; cliente: las de
+# su organización, o solo las asignadas si su alcance es 'empresas')
 ROLES_CONSULTA = ROLES_MONITOREO | {ROL_CLIENTE}
+
+# Rol externo de la junta directiva de una organización: tablero ejecutivo sin datos personales.
+# No entra al detalle de transacciones (tienen nombres y documentos de beneficiarios).
+ROL_JUNTA = "junta"
+
+# Alcance de un usuario «cliente» (columna usuarios.alcance)
+ALCANCE_ORGANIZACION = "organizacion"   # ve todas las empresas de su organización
+ALCANCE_EMPRESAS = "empresas"           # ve solo las de usuario_empresas

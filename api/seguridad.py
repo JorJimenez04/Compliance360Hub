@@ -37,9 +37,12 @@ DURACION_SESION_S = int(os.getenv("SESSION_TIMEOUT_MINUTES", "480")) * 60
 # Los usuarios externos (rol «cliente») tienen una sesión más corta
 DURACION_SESION_CLIENTE_S = int(os.getenv("SESSION_TIMEOUT_MINUTES_CLIENTE", "60")) * 60
 
+# Roles externos: pertenecen a una organización y solo ven datos de ella
+ROLES_EXTERNOS = frozenset({"cliente", "junta"})
+
 
 def duracion_sesion(rol: str) -> int:
-    return min(DURACION_SESION_S, DURACION_SESION_CLIENTE_S) if rol == "cliente" else DURACION_SESION_S
+    return min(DURACION_SESION_S, DURACION_SESION_CLIENTE_S) if rol in ROLES_EXTERNOS else DURACION_SESION_S
 MAX_FALLOS = 5
 BLOQUEO_S = 60
 
@@ -51,11 +54,20 @@ class Usuario:
     nombre: str
     rol: str
     email: str = ""
+    # Solo roles externos: su organización y, para «cliente», si ve toda la organización
+    # ('organizacion') o solo las empresas asignadas ('empresas'). Internos: None.
+    organizacion_id: int | None = None
+    alcance: str | None = None
+
+    @property
+    def externo(self) -> bool:
+        return self.rol in ROLES_EXTERNOS
 
     def como_dict(self) -> dict:
         """Formato que esperan los servicios existentes (igual a st.session_state['user'])."""
         return {"id": self.id, "username": self.username, "nombre_completo": self.nombre,
-                "rol": self.rol, "email": self.email}
+                "rol": self.rol, "email": self.email,
+                "organizacion_id": self.organizacion_id, "alcance": self.alcance}
 
 
 # =========================
@@ -80,6 +92,7 @@ def _unb64(s: str) -> bytes:
 
 def crear_token(u: Usuario) -> str:
     datos = {"uid": u.id, "usr": u.username, "nom": u.nombre, "rol": u.rol, "eml": u.email,
+             "org": u.organizacion_id, "alc": u.alcance,
              "exp": int(time.time()) + duracion_sesion(u.rol)}
     cuerpo = _b64(json.dumps(datos, separators=(",", ":")).encode())
     firma = _b64(hmac.new(_clave(), cuerpo.encode(), hashlib.sha256).digest())
@@ -95,8 +108,10 @@ def leer_token(token: str) -> Usuario | None:
         datos = json.loads(_unb64(cuerpo))
         if int(datos["exp"]) < time.time():
             return None
+        org = datos.get("org")
         return Usuario(id=int(datos["uid"]), username=datos["usr"], nombre=datos.get("nom", ""),
-                       rol=datos["rol"], email=datos.get("eml", ""))
+                       rol=datos["rol"], email=datos.get("eml", ""),
+                       organizacion_id=int(org) if org is not None else None, alcance=datos.get("alc"))
     except Exception:
         return None
 
@@ -163,19 +178,21 @@ def autenticar(username: str, password: str) -> Usuario | None:
         # un super_admin cuyo usuario coincide con ADMIN_USERNAME entraría siempre como «admin».
         with engine.connect() as conn:
             fila = conn.execute(
-                text("SELECT id, username, nombre_completo, email, rol FROM usuarios "
+                text("SELECT id, username, nombre_completo, email, rol, organizacion_id, alcance FROM usuarios "
                      "WHERE username = :u AND activo = 1"), {"u": username},
             ).mappings().first()
         if fila:
-            return Usuario(id=fila["id"], username=fila["username"], nombre=fila["nombre_completo"] or "",
-                           rol=fila["rol"], email=fila["email"] or "")
+            return _de_fila(fila)
         return Usuario(id=0, username=env_user, nombre="Administrador del Sistema", rol="admin",
                        email=os.getenv("ADMIN_EMAIL", ""))
 
     with engine.connect() as conn:
         fila = conn.execute(
-            text("SELECT id, username, nombre_completo, email, rol, password_hash "
-                 "FROM usuarios WHERE username = :u AND activo = 1"), {"u": username},
+            text("SELECT u.id, u.username, u.nombre_completo, u.email, u.rol, u.organizacion_id, u.alcance, "
+                 "u.password_hash FROM usuarios u "
+                 "LEFT JOIN organizaciones o ON o.id = u.organizacion_id "
+                 # Un usuario externo de una organización desactivada no puede ingresar
+                 "WHERE u.username = :u AND u.activo = 1 AND COALESCE(o.activa, TRUE)"), {"u": username},
         ).mappings().first()
     if not fila or fila["password_hash"] in ("", "PLACEHOLDER_HASH"):
         # Se compara igual contra un hash ficticio: misma demora exista o no el usuario
@@ -190,8 +207,13 @@ def autenticar(username: str, password: str) -> Usuario | None:
     with engine.begin() as conn:
         conn.execute(text("UPDATE usuarios SET ultimo_acceso = CURRENT_TIMESTAMP WHERE id = :id"),
                      {"id": fila["id"]})
+    return _de_fila(fila)
+
+
+def _de_fila(fila) -> Usuario:
     return Usuario(id=fila["id"], username=fila["username"], nombre=fila["nombre_completo"] or "",
-                   rol=fila["rol"], email=fila["email"] or "")
+                   rol=fila["rol"], email=fila["email"] or "",
+                   organizacion_id=fila["organizacion_id"], alcance=fila["alcance"])
 
 
 def sigue_activo(u: Usuario) -> bool:
@@ -200,10 +222,13 @@ def sigue_activo(u: Usuario) -> bool:
     from sqlalchemy import text
     from db.database import engine
     with engine.connect() as conn:
-        fila = conn.execute(text("SELECT rol FROM usuarios WHERE id = :id AND activo = 1"),
+        fila = conn.execute(text("SELECT u.rol, u.organizacion_id, u.alcance FROM usuarios u "
+                                 "LEFT JOIN organizaciones o ON o.id = u.organizacion_id "
+                                 "WHERE u.id = :id AND u.activo = 1 AND COALESCE(o.activa, TRUE)"),
                             {"id": u.id}).first()
-    # Si le cambiaron el rol, la sesión anterior deja de valer: debe ingresar de nuevo
-    return fila is not None and fila[0] == u.rol
+    # Si le cambiaron el rol, la organización o el alcance, la sesión anterior deja de valer:
+    # debe ingresar de nuevo (así nadie conserva acceso a datos que ya no le corresponden)
+    return fila is not None and tuple(fila) == (u.rol, u.organizacion_id, u.alcance)
 
 
 def auditar(u: Usuario | None, accion: str, entidad: str, descripcion: str, *,
@@ -253,10 +278,14 @@ def requiere_roles(roles: frozenset[str] | set[str]):
 def modulos_visibles(rol: str) -> list[str]:
     from core.monitoreo_tx.config import ROLES_CONSULTA
     mods = []
+    if rol == "junta":
+        mods.append("junta")
     if rol in ROLES_CONSULTA:
         mods.append("monitoreo")
     if rol in Roles.CAN_VIEW_AUDIT:
         mods.append("auditoria")
+    if rol in ROLES_CONSULTA and rol not in ROLES_EXTERNOS:
+        mods.append("catalogo")
     if rol == "super_admin":
-        mods.append("usuarios")
+        mods += ["organizaciones", "usuarios"]
     return mods

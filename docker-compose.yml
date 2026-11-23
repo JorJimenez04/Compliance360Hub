@@ -8,6 +8,10 @@
 #   docker compose down             # Detener
 #   docker compose down -v          # Detener y borrar datos de la BD
 
+# Nombre de proyecto fijo: así el contenedor y el volumen existentes se reutilizan
+# aunque la carpeta cambie de nombre (antes Proyecto_BP-AliadosEstrategicos).
+name: proyecto_bp-aliadosestrategicos
+
 services:
 
   # ── Base de datos PostgreSQL ──────────────────────────────────────

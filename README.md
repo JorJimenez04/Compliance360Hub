@@ -117,12 +117,11 @@ El alcance se aplica en el servidor (`core/monitoreo_tx/servicio.py`, método `_
 pedir una empresa ajena responde «no existe». Las asignaciones viven en la tabla `usuario_empresas`
 (migración 037). Pruebas: `tests/test_cliente.py`.
 
-Crear o renovar la clave de un cliente (solo acepta el nombre **exacto** de la empresa; no toca usuarios
-que no sean `cliente`; la clave temporal se muestra una sola vez):
-
-```bash
-python scripts/crear_usuario_cliente.py --username jcmantilla --nombre "Juan Camilo Mantilla"     --email correo@ejemplo.com --empresa "CM Grupo Tecno" [--database-url postgresql://...] [--reset-clave]
-```
+**Quién ve qué.** El equipo de cada organización (perfil `cliente`, alcance `organizacion`) ve en solo lectura
+la operación de toda su organización: monitoreo, cartera y transacciones. Alertas, casos, riesgo, screening y
+reportes UIAF son solo del equipo interno. Los clientes de los clientes no tienen acceso: la migración 040 desactivó
+los usuarios con alcance `empresas` y la API ya no los crea. Los usuarios se crean en Administración → Usuarios
+(solo `super_admin`); `scripts/crear_usuario_cliente.py` quedó retirado.
 
 **Restablecer la clave desde la interfaz.** El cliente no puede cambiar su clave. Solo el `super_admin` ve el menú
 «Usuarios clientes» (`/usuarios`) y puede generar una nueva: se muestra una sola vez, en la base solo queda el hash,

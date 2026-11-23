@@ -15,12 +15,12 @@ export default function PaginaLogin() {
             <span className="text-lg font-bold text-acento">C</span>
           </div>
           <h1 className="text-xl font-semibold tracking-tight">Compliance360 Hub</h1>
-          <p className="mt-1 text-sm text-texto-3">Ingrese con su usuario corporativo</p>
+          <p className="mt-1 text-sm text-texto-3">Ingrese con su usuario</p>
         </div>
         <Suspense>
           <FormularioLogin />
         </Suspense>
-        <p className="mt-6 text-center text-xs text-texto-3">Adamo Services · Acceso restringido y auditado</p>
+        <p className="mt-6 text-center text-xs text-texto-3">Acceso restringido y auditado</p>
       </div>
     </main>
   );

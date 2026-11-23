@@ -1,4 +1,4 @@
-"""Generación y hash de claves temporales (compartido por la API y scripts/crear_usuario_cliente.py)."""
+"""Generación y hash de claves temporales (usado por la API)."""
 
 from __future__ import annotations
 

@@ -12,10 +12,24 @@ from sqlalchemy import (
 
 metadata = MetaData()
 
+# Clientes de la plataforma (migración 038): cada uno es un sujeto obligado independiente
+organizaciones = Table(
+    "organizaciones", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("nombre", Text, nullable=False),
+    Column("nit", Text),
+    Column("activa", Boolean, nullable=False),
+    Column("notas", Text),
+    Column("creado_por", Text, nullable=False),
+    Column("created_at", DateTime),
+    Column("updated_at", DateTime),
+)
+
 tx_empresas = Table(
     "tx_empresas", metadata,
     Column("id", Integer, primary_key=True),
     Column("nombre_reporte", Text, nullable=False, unique=True),
+    Column("organizacion_id", Integer, nullable=False),   # migración 038
     Column("cliente_id", Integer),
     Column("activa", Boolean, nullable=False),
     Column("notas", Text),
@@ -92,6 +106,7 @@ clientes = Table(
     Column("nit", Text),
     Column("nivel_riesgo", Text),
     Column("estado", Text),
+    Column("organizacion_id", Integer),   # migración 038
 )
 
 tx_revisiones_nube = Table(

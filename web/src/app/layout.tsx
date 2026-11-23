@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: { default: "Compliance360 Hub", template: "%s · Compliance360 Hub" },
-  description: "Plataforma de cumplimiento — Adamo Services",
+  description: "Plataforma de cumplimiento",
   robots: { index: false, follow: false },
 };
 

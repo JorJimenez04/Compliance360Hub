@@ -6,11 +6,15 @@ import { Aviso, Esqueleto, Insignia, Selector, Tarjeta, TituloTarjeta, Vacio, to
 import { enviar } from "@/lib/api";
 import { useDatos } from "@/lib/useDatos";
 import { entero } from "@/lib/formato";
-import type { ClienteOpcion, Empresa } from "@/lib/tipos";
+import type { ClienteOpcion, Empresa, Organizacion } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
 
-export default function VistaEmpresas({ alCambiar }: { alCambiar: () => void }) {
-  const { datos, error, recargar } = useDatos<{ empresas: Empresa[]; clientes: ClienteOpcion[] }>("/api/monitoreo/empresas");
+export default function VistaEmpresas({ alCambiar, organizacionId, organizaciones, puedeMover }: {
+  alCambiar: () => void; organizacionId: string | null; organizaciones: Organizacion[]; puedeMover: boolean;
+}) {
+  const { datos, error, recargar } = useDatos<{ empresas: Empresa[]; clientes: ClienteOpcion[] }>(
+    `/api/monitoreo/empresas${organizacionId ? `?organizacion_id=${organizacionId}` : ""}`);
+  const nombreOrg = (id: number | null) => organizaciones.find((o) => o.id === id)?.nombre ?? "—";
   const [guardando, setGuardando] = useState<number | null>(null);
   const [fallo, setFallo] = useState<string | null>(null);
 
@@ -23,8 +27,8 @@ export default function VistaEmpresas({ alCambiar }: { alCambiar: () => void }) 
 
   return (
     <Tarjeta>
-      <TituloTarjeta titulo="Empresas de AdamoPay"
-        descripcion="Enlace cada empresa con su cliente para heredar el NIT y el nivel de riesgo. Las inactivas no aparecen en el tablero." />
+      <TituloTarjeta titulo="Empresas monitoreadas"
+        descripcion="Cada empresa pertenece a una organización y solo se enlaza con clientes de esa misma organización. Las inactivas no aparecen en el tablero." />
       {(error || fallo) && <div className="px-5 pt-4"><Aviso tono="critico" icono={<AlertTriangle className="size-4" />}>{error ?? fallo}</Aviso></div>}
       {!datos ? <div className="space-y-2 p-5">{[0, 1, 2].map((i) => <Esqueleto key={i} className="h-12" />)}</div>
         : datos.empresas.length === 0 ? <Vacio icono={<Building2 className="size-8" />} titulo="No hay empresas" texto="Se crean solas al cargar el primer historial de cada una." />
@@ -32,19 +36,34 @@ export default function VistaEmpresas({ alCambiar }: { alCambiar: () => void }) 
           <div className="overflow-x-auto px-2 pb-3 pt-3">
             <table className="w-full min-w-[820px] text-[13px]">
               <thead><tr className="text-left text-texto-3">
-                <th className="px-3 py-2 font-medium">Empresa (carpeta)</th><th className="px-3 py-2 text-right font-medium">Movimientos</th>
+                <th className="px-3 py-2 font-medium">Empresa (carpeta)</th><th className="px-3 py-2 font-medium">Organización</th>
+                <th className="px-3 py-2 text-right font-medium">Movimientos</th>
                 <th className="px-3 py-2 font-medium">Cliente enlazado</th><th className="px-3 py-2 font-medium">Riesgo</th>
                 <th className="px-3 py-2 font-medium">Estado</th></tr></thead>
               <tbody>
                 {datos.empresas.map((e) => (
                   <tr key={e.id} className={cn("border-t border-borde/70", guardando === e.id && "opacity-60")}>
                     <td className="px-3 py-3 font-medium">{e.nombre_reporte}</td>
+                    <td className="px-3 py-3">
+                      {puedeMover && organizaciones.length > 1 ? (
+                        <Selector aria-label={`Organización de ${e.nombre_reporte}`} className="h-8 w-48" disabled={guardando === e.id}
+                          value={e.organizacion_id ?? ""}
+                          onChange={(ev) => {
+                            const destino = Number(ev.target.value);
+                            if (window.confirm(`¿Pasar «${e.nombre_reporte}» a ${nombreOrg(destino)}? Se quitará su enlace con el cliente y el acceso de usuarios de la organización actual.`))
+                              void cambiar(e.id, { organizacion_id: destino });
+                          }}>
+                          {organizaciones.filter((o) => o.activa || o.id === e.organizacion_id).map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                        </Selector>
+                      ) : <span className="text-texto-2">{nombreOrg(e.organizacion_id)}</span>}
+                    </td>
                     <td className="cifra px-3 py-3 text-right">{entero(e.transacciones ?? 0)}</td>
                     <td className="px-3 py-3">
                       <Selector aria-label={`Cliente de ${e.nombre_reporte}`} className="h-8 w-72" disabled={guardando === e.id}
                         value={e.cliente_id ?? ""} onChange={(ev) => cambiar(e.id, ev.target.value ? { cliente_id: Number(ev.target.value) } : { quitar_enlace: true })}>
                         <option value="">Sin enlazar</option>
-                        {datos.clientes.map((c) => <option key={c.id} value={c.id}>{c.razon_social}{c.nit ? ` · ${c.nit}` : ""}</option>)}
+                        {datos.clientes.filter((c) => c.organizacion_id === e.organizacion_id)
+                          .map((c) => <option key={c.id} value={c.id}>{c.razon_social}{c.nit ? ` · ${c.nit}` : ""}</option>)}
                       </Selector>
                     </td>
                     <td className="px-3 py-3">{e.enlazada ? <Insignia tono={tonoRiesgo(e.nivel_riesgo)}>{e.nivel_riesgo ?? "Sin calificar"}</Insignia> : <span className="text-texto-3">—</span>}</td>

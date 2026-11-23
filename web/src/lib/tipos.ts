@@ -1,15 +1,35 @@
 // Contratos de la API (api/rutas/*.py)
 
-export type Modulo = "monitoreo" | "auditoria" | "usuarios";
+export type Modulo = "monitoreo" | "auditoria" | "usuarios" | "organizaciones" | "junta" | "catalogo";
 
 export interface Perfil {
   id: number; username: string; nombre: string; rol: string; email: string | null; modulos: Modulo[];
+  /** Solo usuarios externos (cliente, junta): su organización. Los internos ven todas. */
+  organizacion: { id: number; nombre: string | null } | null;
+}
+
+export const ROLES_EXTERNOS = ["cliente", "junta"];
+
+export interface Organizacion {
+  id: number; nombre: string; nit?: string | null; activa?: boolean; notas?: string | null;
+  empresas?: number; clientes?: number; usuarios?: number; creada?: string | null;
+}
+
+export type PerfilGestionado = "cliente" | "junta" | "compliance";
+export type Alcance = "organizacion" | "empresas";
+
+export interface UsuarioGestionado {
+  id: number; username: string; nombre: string; email: string | null; rol: PerfilGestionado; activo: boolean;
+  ultimo_acceso: string | null; organizacion_id: number | null; organizacion: string | null;
+  alcance: Alcance | null; empresas_ids: number[]; empresas: string;
 }
 
 export interface Empresa {
   id: number; nombre_reporte: string; nombre: string; activa: boolean; enlazada: boolean;
   cliente_id: number | null; razon_social: string | null; nit: string | null;
   nivel_riesgo: string | null; transacciones: number | null;
+  /** Solo para internos (al cliente llega null) */
+  organizacion_id: number | null;
 }
 
 export interface Resumen { ultima_carga: string | null; empresas: Empresa[]; puede_cargar: boolean }
@@ -89,4 +109,93 @@ export interface Nube {
   archivos: { fecha: string; empresa: string | null; nombre: string; resultado: string; mensaje: string }[];
 }
 
-export interface ClienteOpcion { id: number; razon_social: string; nit: string | null; nivel_riesgo: string | null }
+export interface ClienteOpcion { id: number; razon_social: string; nit: string | null; nivel_riesgo: string | null; organizacion_id: number }
+
+// ---------- Catálogo de cumplimiento (core/cumplimiento/catalogo.py) ----------
+export type Nivel = "Alto" | "Medio" | "Bajo";
+
+export interface ServicioCat { codigo: string; nombre: string; descripcion: string }
+export interface RegimenCat {
+  codigo: string; nombre: string; supervisor: string; sistema: string; reportes_uiaf: string[]; nota: string;
+}
+export interface ModeloCat {
+  codigo: string; grupo: string; nombre: string; riesgo_sugerido: Nivel; regimenes: string[]; documentos: string[];
+  monitoreo: ("fiat" | "cripto")[]; senales_alerta: string[]; por_que: string;
+}
+export interface Catalogo { niveles: Nivel[]; servicios: ServicioCat[]; regimenes: RegimenCat[]; modelos: ModeloCat[] }
+
+export interface DocumentoPaquete {
+  codigo: string; nombre: string; carpeta: string; aporta: "cliente" | "oficial" | "ambos";
+  vigencia_meses: number | null; nota: string; origen: string[];
+}
+export interface Paquete {
+  nivel: Nivel; tipo_persona: "juridica" | "natural"; modelos: string[]; riesgo_sugerido: Nivel | null;
+  monitoreo_sugerido: string[]; regimen: RegimenCat | null; senales_alerta: string[]; documentos: DocumentoPaquete[];
+  nivel_es_provisional?: boolean;
+}
+
+export interface Ficha {
+  id: number; nombre: string; nit: string | null; activa: boolean; notas: string | null;
+  tipo_persona: "juridica" | "natural"; servicios: string[]; modelos_negocio: string[]; regimen: string | null;
+  nivel_riesgo: Nivel | "Sin calificar"; fecha_calificacion: string | null; proxima_revision: string | null;
+  oficial_principal_id: number | null; oficial_principal: string | null; oficial_suplente: string | null;
+  fecha_designacion: string | null; acta_designacion: string | null;
+  riesgo_sugerido: Nivel | null; monitoreo_sugerido: string[];
+  oficiales_disponibles: { id: number; nombre: string }[];
+}
+
+// ---------- Cartera: todas las empresas a la vista (GET /api/monitoreo/cartera) ----------
+export interface FilaCartera extends Empresa {
+  kpis: Kpis | null; kpis_anterior: Kpis | null; participacion: number;
+  ultima_operacion: string | null; tendencia: number[];
+}
+export interface Cartera {
+  desde: string | null; hasta: string | null; granularidad: "Diaria" | "Semanal" | "Mensual";
+  global: Kpis | null; anterior: Kpis | null; total_empresas: number; empresas_con_movimiento: number;
+  serie: { periodo: string; monto: number; pagos: number }[]; empresas: FilaCartera[];
+}
+
+// ---------- Clientes de la organización y su compliance (solo equipo interno) ----------
+export type EstadoAlerta = "nueva" | "en_analisis" | "descartada" | "escalada" | "posible_ros";
+export type Prioridad = "Crítica" | "Alta" | "Media" | "Baja";
+
+export interface ClienteFila {
+  id: number; razon_social: string; nit: string | null; nivel_riesgo: string; estado: string;
+  modelos_negocio: string[]; proxima_revision: string | null; empresas: { id: number; nombre: string }[];
+  alertas_abiertas: number; alertas_altas: number;
+}
+export interface EmpresaSinCliente { id: number; nombre: string; transacciones: number }
+
+export interface AlertaCaso {
+  id: number; organizacion_id: number; empresa_id: number; empresa: string; cliente_id: number | null;
+  regla: string; periodo: string; tipo: string | null; prioridad: Prioridad; titulo: string;
+  descripcion: string | null; accion_requerida: string | null; valor_detectado: number | null; umbral: number | null;
+  requiere_reporte_uiaf: boolean; detectada_en: string; actualizada_en: string; fecha_limite: string | null;
+  estado: EstadoAlerta; analista_id: number | null; analista: string | null; justificacion: string | null;
+  decidida_por: string | null; decidida_en: string | null;
+}
+export interface EventoAlerta {
+  id: number; usuario: string; accion: string; estado_anterior: string | null; estado_nuevo: string | null;
+  nota: string | null; creado_en: string;
+}
+export interface AlertaDetalle extends AlertaCaso { eventos: EventoAlerta[]; transiciones: EstadoAlerta[] }
+
+export interface FichaCliente {
+  id: number; organizacion_id: number; organizacion: string; razon_social: string; nit: string | null;
+  tipo_persona: "juridica" | "natural"; modelos_negocio: string[]; nivel_riesgo: string; estado: string;
+  sector_ciiu: string | null; pais_constitucion: string | null; sitio_web: string | null;
+  proxima_revision: string | null; fecha_ultima_calificacion: string | null; notas: string | null;
+  perfil_volumen_mensual: number | null; perfil_operaciones_mes: number | null; perfil_ticket_promedio: number | null;
+  perfil_paises: string[]; perfil_actualizado: string | null;
+  empresas: { id: number; nombre: string; activa: boolean }[];
+  riesgo_sugerido: Nivel | null;
+  operacion: { desde: string | null; hasta: string | null; kpis: Kpis | null; ultima_operacion: string | null };
+  alertas_resumen: { abiertas: number; total: number; por_prioridad: Record<Prioridad, number>; posible_ros: number };
+  paquete: { nivel: Nivel; nivel_es_provisional: boolean; documentos: DocumentoPaquete[] };
+}
+export interface PerfilVsReal {
+  declarado: { volumen_mensual: number | null; operaciones_mes: number | null; ticket_promedio: number | null;
+    paises: string[]; actualizado: string | null };
+  meses: { periodo: string; monto_pagado: number; operaciones: number; ticket_promedio: number;
+    desv_volumen: number | null; desv_operaciones: number | null; desv_ticket: number | null }[];
+}

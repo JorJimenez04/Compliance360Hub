@@ -95,8 +95,8 @@ class TransaccionesRepo:
         return df
 
 
-def _filtrar(q, cliente: str, filtros: FiltrosTransacciones):
-    q = q.where(T.cliente == cliente)
+def _filtrar(q, cliente: str | list[str], filtros: FiltrosTransacciones):
+    q = q.where(T.cliente.in_(cliente) if isinstance(cliente, list) else T.cliente == cliente)
     if filtros.desde:
         q = q.where(T.fecha >= filtros.desde)
     if filtros.hasta:
@@ -114,9 +114,55 @@ def _filtrar(q, cliente: str, filtros: FiltrosTransacciones):
 
 
 # =========================
+# Cartera: varias empresas en una sola consulta
+# =========================
+class CarteraRepo:
+    """Agregados de varias empresas a la vez. Sin permisos: el servicio decide qué empresas entran."""
+
+    def __init__(self, engine: Engine):
+        self.engine = engine
+
+    def opciones(self, clientes: list[str]) -> tuple[date | None, date | None, list[str]]:
+        if not clientes:
+            return None, None, []
+        with self.engine.connect() as conn:
+            minimo, maximo = conn.execute(
+                select(func.min(T.fecha), func.max(T.fecha)).where(T.cliente.in_(clientes))).one()
+            estados = list(conn.scalars(
+                select(T.estado).where(T.cliente.in_(clientes)).distinct().order_by(T.estado)))
+        return minimo, maximo, estados
+
+    def diario(self, clientes: list[str], filtros: FiltrosTransacciones) -> pd.DataFrame:
+        """Conteo y monto por (empresa, día, tipo, exitosa): pocas filas aunque haya millones de transacciones."""
+        cols = ["cliente", "fecha", "tipo_transaccion", "exitosa", "transacciones", "monto"]
+        if not clientes:
+            return pd.DataFrame(columns=cols)
+        q = _filtrar(
+            select(T.cliente, T.fecha, T.tipo_transaccion, T.exitosa,
+                   func.count().label("transacciones"), func.sum(T.monto).label("monto")),
+            clientes, filtros,
+        ).group_by(T.cliente, T.fecha, T.tipo_transaccion, T.exitosa)
+        with self.engine.connect() as conn:
+            df = pd.read_sql(q, conn)
+        if df.empty:
+            return pd.DataFrame(columns=cols)
+        df["exitosa"] = df["exitosa"].astype(bool)
+        df["monto"] = df["monto"].fillna(0.0)
+        return df
+
+    def ultima_operacion(self, clientes: list[str]) -> dict[str, object]:
+        if not clientes:
+            return {}
+        with self.engine.connect() as conn:
+            filas = conn.execute(select(T.cliente, func.max(T.fecha_hora))
+                                 .where(T.cliente.in_(clientes)).group_by(T.cliente))
+            return {c: f for c, f in filas}
+
+
+# =========================
 # Empresas (hojas del reporte) y su enlace con clientes
 # =========================
-_COLUMNAS_EMPRESA = [E.id, E.nombre_reporte, E.activa, E.cliente_id, E.notas,
+_COLUMNAS_EMPRESA = [E.id, E.nombre_reporte, E.activa, E.cliente_id, E.notas, E.organizacion_id,
                      C.razon_social, C.nit, C.nivel_riesgo]
 
 
@@ -124,7 +170,7 @@ def _a_vista(fila) -> EmpresaVista:
     return EmpresaVista(
         id=fila.id, nombre_reporte=fila.nombre_reporte, activa=bool(fila.activa),
         cliente_id=fila.cliente_id, razon_social=fila.razon_social, nit=fila.nit,
-        nivel_riesgo=fila.nivel_riesgo, notas=fila.notas,
+        nivel_riesgo=fila.nivel_riesgo, notas=fila.notas, organizacion_id=fila.organizacion_id,
     )
 
 
@@ -136,10 +182,13 @@ class EmpresasRepo:
         return select(*_COLUMNAS_EMPRESA).select_from(
             tx_empresas.outerjoin(clientes, E.cliente_id == C.id))
 
-    def listar(self, solo_activas: bool = False) -> list[EmpresaVista]:
+    def listar(self, solo_activas: bool = False, organizacion_id: int | None = None) -> list[EmpresaVista]:
+        """organizacion_id=None: todas (solo para internos; el servicio decide quién puede)."""
         q = self._base()
         if solo_activas:
             q = q.where(E.activa.is_(True))
+        if organizacion_id is not None:
+            q = q.where(E.organizacion_id == organizacion_id)
         with self.engine.connect() as conn:
             filas = conn.execute(q).all()
         return sorted((_a_vista(f) for f in filas), key=lambda e: e.nombre_visible.casefold())
@@ -160,17 +209,40 @@ class EmpresasRepo:
         with self.engine.begin() as conn:
             conn.execute(update(tx_empresas).where(E.id == empresa_id).values(cliente_id=cliente_id))
 
+    def mover_a_organizacion(self, empresa_id: int, organizacion_id: int) -> dict:
+        """Pasa la empresa a otra organización en una sola transacción:
+        quita el enlace con un cliente de la organización anterior y las asignaciones
+        de usuarios que no son de la nueva (nadie conserva acceso por arrastre)."""
+        from sqlalchemy import text as _text
+        with self.engine.begin() as conn:
+            existe = conn.scalar(_text("SELECT 1 FROM organizaciones WHERE id = :o AND activa"),
+                                 {"o": organizacion_id})
+            if not existe:
+                return {"ok": False}
+            conn.execute(update(tx_empresas).where(E.id == empresa_id)
+                         .values(organizacion_id=organizacion_id, cliente_id=None))
+            quitadas = conn.execute(_text(
+                "DELETE FROM usuario_empresas ue USING usuarios u "
+                "WHERE ue.usuario_id = u.id AND ue.empresa_id = :e "
+                "AND u.organizacion_id IS DISTINCT FROM :o"), {"e": empresa_id, "o": organizacion_id}).rowcount
+        return {"ok": True, "asignaciones_quitadas": quitadas}
+
     def cambiar_estado(self, empresa_id: int, activa: bool) -> None:
         with self.engine.begin() as conn:
             conn.execute(update(tx_empresas).where(E.id == empresa_id).values(activa=activa))
 
-    def clientes_disponibles(self) -> list[dict]:
-        """Fichas de Gestión de Clientes para enlazar (id, razón social, NIT, riesgo)."""
+    def clientes_disponibles(self, organizacion_id: int | None = None) -> list[dict]:
+        """Fichas de Gestión de Clientes para enlazar (id, razón social, NIT, riesgo, organización)."""
+        q = select(C.id, C.razon_social, C.nit, C.nivel_riesgo, C.organizacion_id).order_by(C.razon_social)
+        if organizacion_id is not None:
+            q = q.where(C.organizacion_id == organizacion_id)
         with self.engine.connect() as conn:
-            filas = conn.execute(
-                select(C.id, C.razon_social, C.nit, C.nivel_riesgo).order_by(C.razon_social)
-            ).mappings().all()
+            filas = conn.execute(q).mappings().all()
         return [dict(f) for f in filas]
+
+    def organizacion_de_cliente(self, cliente_id: int) -> int | None:
+        with self.engine.connect() as conn:
+            return conn.scalar(select(C.organizacion_id).where(C.id == cliente_id))
 
 
 def registrar_empresas_faltantes(conn: Connection, nombres_reporte: list[str]) -> list[str]:

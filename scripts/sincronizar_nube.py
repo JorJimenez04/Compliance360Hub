@@ -73,6 +73,12 @@ def main() -> int:
         print(f"ERROR: {e}")
         return 1
     print(f"\nResultado: {r.resultado} — {r.mensaje} ({r.duracion_s} s)")
+    if getattr(r, "cargados", 0):
+        from core.cumplimiento.alertas import evaluar_por_nombres
+        ev = evaluar_por_nombres(engine, None, usuario="programada")
+        if ev:
+            print(f"Alertas de cumplimiento: {ev.nuevas} nuevas, {ev.actualizadas} actualizadas "
+                  f"({ev.empresas} empresas, {ev.meses} meses evaluados)")
     for x in r.archivos:
         print(f"  [{x.resultado}] {x.empresa} / {x.nombre}: {x.insertadas} nuevas, {x.actualizadas} actualizadas, "
               f"{x.rechazadas} rechazadas" + (f" · completitud: {x.completitud}" if x.completitud else "")

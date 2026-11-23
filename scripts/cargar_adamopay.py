@@ -110,6 +110,11 @@ def _trabajos_de_carpeta(carpeta: pathlib.Path) -> list[tuple[pathlib.Path, str]
 def _imprimir(r) -> None:
     print(f"  Resultado: {r.resultado} — {r.mensaje}")
     if r.resultado == "OK":
+        from core.cumplimiento.alertas import evaluar_por_nombres
+        ev = evaluar_por_nombres(engine, list(r.verificacion) or None, usuario="script")
+        if ev:
+            print(f"  Alertas de cumplimiento: {ev.nuevas} nuevas, {ev.actualizadas} actualizadas")
+    if r.resultado == "OK":
         print(f"  Empresas: {r.clientes} · leídas: {r.filas_leidas} · nuevas: {r.insertadas} · "
               f"actualizadas: {r.actualizadas} · sin cambios: {r.sin_cambios} · "
               f"rechazadas: {r.rechazadas} · eliminadas: {r.eliminadas} · {r.duracion_s} s")

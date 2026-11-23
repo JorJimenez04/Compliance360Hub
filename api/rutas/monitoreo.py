@@ -78,9 +78,10 @@ def _empresa_json(e, conteo: dict[str, int] | None = None, interno_: bool = True
              "transacciones": (conteo or {}).get(e.nombre_reporte)}
     if interno_:
         datos |= {"enlazada": e.enlazada, "cliente_id": e.cliente_id, "razon_social": e.razon_social,
-                  "nit": e.nit, "nivel_riesgo": e.nivel_riesgo}
+                  "nit": e.nit, "nivel_riesgo": e.nivel_riesgo, "organizacion_id": e.organizacion_id}
     else:
-        datos |= {"enlazada": False, "cliente_id": None, "razon_social": None, "nit": None, "nivel_riesgo": None}
+        datos |= {"enlazada": False, "cliente_id": None, "razon_social": None, "nit": None, "nivel_riesgo": None,
+                  "organizacion_id": None}
     return datos
 
 
@@ -95,11 +96,14 @@ def _auditar_consulta(u: seg.Usuario, empresa_id: int, vista: str) -> None:
 # Empresas y estado general
 # =========================
 @router.get("/resumen")
-def resumen(u: seg.Usuario = Depends(ver)) -> dict:
+def resumen(organizacion_id: int | None = None, u: seg.Usuario = Depends(ver)) -> dict:
+    """organizacion_id: filtro para internos (selector de organización). El cliente siempre ve
+    solo la suya: el servicio ignora el parámetro para él."""
     srv, user = servicio(), u.como_dict()
+    org = None if u.externo else organizacion_id
     try:
-        empresas = srv.empresas(user, solo_activas=True)
-        conteo = srv.conteo_por_empresa(user)
+        empresas = srv.empresas(user, solo_activas=True, organizacion_id=org)
+        conteo = srv.conteo_por_empresa(user, organizacion_id=org)
     except Exception as e:
         _error(e)
     ultima = srv.ultima_carga()
@@ -258,27 +262,83 @@ def riesgo(
 
 
 # =========================
+# Cartera: todas las empresas a la vista
+# =========================
+@router.get("/cartera/opciones")
+def opciones_cartera(organizacion_id: int | None = None, u: seg.Usuario = Depends(ver)) -> dict:
+    try:
+        o = servicio().opciones_cartera(u.como_dict(), None if u.externo else organizacion_id)
+    except Exception as e:
+        _error(e)
+    return {"fecha_min": o.fecha_min.isoformat() if o.fecha_min else None,
+            "fecha_max": o.fecha_max.isoformat() if o.fecha_max else None,
+            "estados": list(o.estados), "continuidad": None}
+
+
+@router.get("/cartera")
+def cartera(
+    organizacion_id: int | None = None,
+    desde: date | None = None,
+    hasta: date | None = None,
+    estados: list[str] | None = Query(None),
+    u: seg.Usuario = Depends(ver),
+) -> dict:
+    """Indicadores globales y una fila por empresa. Al cliente no le llega la calificación de riesgo."""
+    user, interno_ = u.como_dict(), u.rol in ROLES_MONITOREO
+    try:
+        c = servicio().cartera(user, _filtros(desde, hasta, estados, ""), None if u.externo else organizacion_id)
+    except Exception as e:
+        _error(e)
+    if es_cliente(user):
+        registrar_auditoria(user, "READ", "Monitoreo TX: cliente consulta la cartera", entidad="tx_empresas")
+    serie = c.get("serie")
+    return {
+        "desde": c["desde"].isoformat() if c.get("desde") else None,
+        "hasta": c["hasta"].isoformat() if c.get("hasta") else None,
+        "granularidad": c["granularidad"],
+        "global": _kpis(c["global"]), "anterior": _kpis(c["anterior"]),
+        "total_empresas": len(c["empresas"]), "empresas_con_movimiento": c.get("empresas_con_movimiento", 0),
+        "serie": _registros(serie) if serie is not None else [],
+        "empresas": [{
+            **_empresa_json(f["empresa"], None, interno_),
+            "kpis": _kpis(f["kpis"]), "kpis_anterior": _kpis(f["kpis_anterior"]),
+            "participacion": f["participacion"],
+            "ultima_operacion": f["ultima_operacion"].isoformat() if f["ultima_operacion"] else None,
+            "tendencia": f["tendencia"],
+        } for f in c["empresas"]],
+    }
+
+
+# =========================
 # Empresas (administración del enlace con clientes)
 # =========================
 @router.get("/empresas")
-def empresas(u: seg.Usuario = Depends(cargar)) -> dict:
+def empresas(organizacion_id: int | None = None, u: seg.Usuario = Depends(cargar)) -> dict:
+    """Cada cliente lleva su organización: el frontend solo ofrece, para cada empresa, los
+    clientes de su misma organización (y el servicio lo vuelve a validar al enlazar)."""
     srv, user = servicio(), u.como_dict()
-    conteo = srv.conteo_por_empresa(user)
-    return {"empresas": [_empresa_json(e, conteo) for e in srv.empresas(user, solo_activas=False)],
+    conteo = srv.conteo_por_empresa(user, organizacion_id=organizacion_id)
+    return {"empresas": [_empresa_json(e, conteo) for e in srv.empresas(user, solo_activas=False,
+                                                                         organizacion_id=organizacion_id)],
             "clientes": [{"id": c["id"], "razon_social": c["razon_social"], "nit": c["nit"],
-                          "nivel_riesgo": c["nivel_riesgo"]} for c in srv.clientes_disponibles(user)]}
+                          "nivel_riesgo": c["nivel_riesgo"], "organizacion_id": c["organizacion_id"]}
+                         for c in srv.clientes_disponibles(user, organizacion_id)]}
 
 
 class CambioEmpresa(BaseModel):
     cliente_id: int | None = None
     quitar_enlace: bool = False
     activa: bool | None = None
+    # Solo super_admin (lo valida el servicio): mueve la empresa a otra organización
+    organizacion_id: int | None = None
 
 
 @router.patch("/empresas/{empresa_id}")
 def cambiar_empresa(empresa_id: int, datos: CambioEmpresa, u: seg.Usuario = Depends(cargar)) -> dict:
     srv, user = servicio(), u.como_dict()
     try:
+        if datos.organizacion_id is not None:
+            srv.mover_empresa(user, empresa_id, datos.organizacion_id)
         if datos.quitar_enlace:
             srv.enlazar_cliente(user, empresa_id, None)
         elif datos.cliente_id is not None:

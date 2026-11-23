@@ -262,16 +262,10 @@ def engine_pg():
     url = os.getenv("TX_TEST_PG_URL")
     if not url:
         pytest.skip("Defina TX_TEST_PG_URL para probar la sincronización contra PostgreSQL")
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import create_engine
+    from tests._esquema import crear_esquema_minimo
     engine = create_engine(url)
-    migracion = pathlib.Path(__file__).resolve().parent.parent / "db" / "migrations" / "035_monitoreo_transaccional.sql"
-    with engine.begin() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS tx_transacciones, tx_sincronizaciones, tx_empresas CASCADE"))
-        # La migración 035 referencia clientes (027); en una base vacía basta una mínima
-        conn.execute(text(
-            "CREATE TABLE IF NOT EXISTS clientes (id SERIAL PRIMARY KEY, razon_social TEXT, "
-            "nit TEXT, nivel_riesgo TEXT, estado TEXT)"))
-        conn.execute(text(migracion.read_text(encoding="utf-8")))
+    crear_esquema_minimo(engine)   # 035–038 sobre clientes y usuarios mínimos
     yield engine
     engine.dispose()
 
@@ -671,3 +665,19 @@ def test_onedrive_encuentra_la_carpeta_fuera_de_la_raiz():
                       {"id": "b", "name": "adamopay_datos", "folder": {}}]
     with pytest.raises(ErrorFuente, match="Hay 2 carpetas"):
         FuenteOneDrive(_config_falsa(), sesion=graph).listar()
+
+
+def test_serie_desde_diario_alinea_periodos_y_solo_cuenta_pagos_exitosos():
+    from core.monitoreo_tx.domain import metricas
+    from datetime import date
+    diario = pd.DataFrame({
+        "fecha": [date(2026, 1, 5), date(2026, 1, 5), date(2026, 3, 2)],
+        "tipo_transaccion": ["Débito", "Crédito", "Débito"],
+        "exitosa": [True, True, False],
+        "transacciones": [2, 1, 4], "monto": [100.0, 30.0, 999.0],
+    })
+    s = metricas.serie_desde_diario(diario, "Mensual", date(2026, 1, 1), date(2026, 3, 31))
+    assert len(s) == 3                                   # enero, febrero (vacío) y marzo
+    assert s["monto"].tolist() == [100.0, 0.0, 0.0] and s["pagos"].tolist() == [2, 0, 0]
+    vacia = metricas.serie_desde_diario(diario.iloc[0:0], "Mensual", date(2026, 1, 1), date(2026, 3, 31))
+    assert len(vacia) == 3 and vacia["monto"].sum() == 0
