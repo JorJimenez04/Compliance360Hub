@@ -11,7 +11,8 @@ import { entero, fecha, fechaHora, haceCuanto, mesCorto, moneda, monedaCorta, po
 import type { Catalogo, FichaCliente, PerfilVsReal } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
 import { Kpi } from "@/components/monitoreo/tablero";
-import SelectorModelos from "./selector-modelos";
+import ActividadYModelos from "./actividades";
+import { riesgoDe } from "./selector-modelos";
 import VistaPaquete from "./paquete";
 import { ListaAlertas, NOMBRE_ESTADO } from "./alertas";
 
@@ -73,9 +74,9 @@ export default function Expediente360(props: { organizacionId: number; clienteId
 }
 
 // ---------- Resumen ----------
-type Editable = Pick<FichaCliente, "razon_social" | "nit" | "tipo_persona" | "estado" | "nivel_riesgo" | "sector_ciiu"
+type Editable = Pick<FichaCliente, "razon_social" | "nit" | "tipo_persona" | "estado" | "nivel_riesgo" | "actividades_ciiu"
   | "pais_constitucion" | "sitio_web" | "proxima_revision" | "modelos_negocio" | "notas">;
-const CAMPOS: (keyof Editable)[] = ["razon_social", "nit", "tipo_persona", "estado", "nivel_riesgo", "sector_ciiu",
+const CAMPOS: (keyof Editable)[] = ["razon_social", "nit", "tipo_persona", "estado", "nivel_riesgo", "actividades_ciiu",
   "pais_constitucion", "sitio_web", "proxima_revision", "modelos_negocio", "notas"];
 
 function useGuardar(clienteId: number, onGuardado: () => void) {
@@ -98,6 +99,7 @@ function Resumen({ f, cat, organizacionId, onGuardado }: { f: FichaCliente; cat:
   const k = f.operacion.kpis;
   const poner = (c: Partial<Editable>) => setEd({ ...ed, ...c });
   const r = f.alertas_resumen;
+  const sugerido = riesgoDe(cat.modelos, ed.modelos_negocio);
 
   return (
     <div className="space-y-6">
@@ -148,18 +150,18 @@ function Resumen({ f, cat, organizacionId, onGuardado }: { f: FichaCliente; cat:
                 {["Sin calificar", "Alto", "Medio", "Bajo"].map((n) => <option key={n} value={n}>{n}</option>)}
                 {!["Sin calificar", "Alto", "Medio", "Bajo"].includes(ed.nivel_riesgo) && <option value={ed.nivel_riesgo}>{ed.nivel_riesgo} (anterior)</option>}
               </Selector>
-              {f.riesgo_sugerido && <p className="mt-1 text-xs text-texto-3">Sugerido por sus modelos: {f.riesgo_sugerido}</p>}</div>
+              {sugerido && <p className="mt-1 text-xs text-texto-3">Sugerido por sus modelos: {sugerido}
+                {sugerido !== ed.nivel_riesgo && <button type="button" className="ml-2 text-acento hover:underline" onClick={() => poner({ nivel_riesgo: sugerido })}>Usar</button>}</p>}</div>
             <div><Etiqueta htmlFor="c-est">Estado</Etiqueta>
               <Selector id="c-est" value={ed.estado} onChange={(e) => poner({ estado: e.target.value })}>
                 {["Prospecto", "Activo", "Suspendido", "Terminado"].map((n) => <option key={n} value={n}>{n}</option>)}</Selector></div>
             <div><Etiqueta htmlFor="c-rev">Próxima revisión</Etiqueta>
               <Entrada id="c-rev" type="date" value={ed.proxima_revision ?? ""} onChange={(e) => poner({ proxima_revision: e.target.value || null })} /></div>
-            <div><Etiqueta htmlFor="c-ciiu">Actividad (CIIU)</Etiqueta><Entrada id="c-ciiu" value={ed.sector_ciiu ?? ""} onChange={(e) => poner({ sector_ciiu: e.target.value })} /></div>
             <div><Etiqueta htmlFor="c-pais">País de constitución</Etiqueta><Entrada id="c-pais" value={ed.pais_constitucion ?? ""} onChange={(e) => poner({ pais_constitucion: e.target.value })} /></div>
             <div><Etiqueta htmlFor="c-web">Sitio web</Etiqueta><Entrada id="c-web" value={ed.sitio_web ?? ""} onChange={(e) => poner({ sitio_web: e.target.value })} /></div>
           </div>
-          <div><Etiqueta>Modelos de negocio</Etiqueta>
-            <SelectorModelos modelos={cat.modelos} valor={ed.modelos_negocio} onCambio={(v) => poner({ modelos_negocio: v })} /></div>
+          <ActividadYModelos modelos={cat.modelos} documentos={cat.documentos} actividades={ed.actividades_ciiu}
+            modelosNegocio={ed.modelos_negocio} onCambio={({ actividades, modelos }) => poner({ actividades_ciiu: actividades, modelos_negocio: modelos })} />
           <div><Etiqueta htmlFor="c-notas">Notas internas</Etiqueta>
             <textarea id="c-notas" rows={3} value={ed.notas ?? ""} onChange={(e) => poner({ notas: e.target.value })}
               className="w-full rounded-lg border border-borde-fuerte bg-fondo px-3 py-2 text-sm text-texto focus:border-acento focus:outline-none" /></div>

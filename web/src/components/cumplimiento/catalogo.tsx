@@ -6,13 +6,14 @@ import { Aviso, Esqueleto, Etiqueta, Selector, Tarjeta, TituloTarjeta } from "@/
 import { useDatos } from "@/lib/useDatos";
 import { query } from "@/lib/api";
 import type { Catalogo, Paquete } from "@/lib/tipos";
-import SelectorModelos from "./selector-modelos";
+import ActividadYModelos from "./actividades";
 import VistaPaquete from "./paquete";
 
 /** Para un cliente potencial: elija su modelo de negocio y vea qué documentación se le pedirá. */
 export default function CatalogoCumplimiento() {
   const cat = useDatos<Catalogo>("/api/catalogo");
   const [modelos, setModelos] = useState<string[]>([]);
+  const [actividades, setActividades] = useState<string[]>([]);
   const [nivel, setNivel] = useState("");
   const [persona, setPersona] = useState("juridica");
   const [regimen, setRegimen] = useState("");
@@ -32,9 +33,10 @@ export default function CatalogoCumplimiento() {
       {!cat.datos ? <Esqueleto className="h-96" /> : (
         <>
           <Tarjeta>
-            <TituloTarjeta titulo="Cliente potencial" descripcion={`${cat.datos.modelos.length} modelos de negocio en ${new Set(cat.datos.modelos.map((m) => m.grupo)).size} grupos. Pase el cursor sobre uno para ver por qué tiene ese riesgo.`} />
+            <TituloTarjeta titulo="Cliente potencial" descripcion={`Elija sus actividades CIIU para aplicar los modelos automáticamente, o márquelos a mano entre ${cat.datos.modelos.length} modelos en ${new Set(cat.datos.modelos.map((m) => m.grupo)).size} grupos. Abra un modelo para ver por qué tiene ese riesgo.`} />
             <div className="space-y-5 px-5 pb-5 pt-3">
-              <SelectorModelos modelos={cat.datos.modelos} valor={modelos} onCambio={setModelos} />
+              <ActividadYModelos modelos={cat.datos.modelos} documentos={cat.datos.documentos} actividades={actividades}
+                modelosNegocio={modelos} onCambio={(c) => { setActividades(c.actividades); setModelos(c.modelos); }} />
               <div className="grid gap-4 md:grid-cols-3">
                 <div><Etiqueta htmlFor="c-nivel">Nivel de riesgo</Etiqueta>
                   <Selector id="c-nivel" value={nivel} onChange={(e) => setNivel(e.target.value)}>

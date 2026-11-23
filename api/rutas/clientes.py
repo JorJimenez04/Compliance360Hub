@@ -112,6 +112,7 @@ class CambioCliente(BaseModel):
     nit: str | None = Field(None, max_length=30)
     tipo_persona: str | None = None
     modelos_negocio: list[str] | None = Field(None, max_length=30)
+    actividades_ciiu: list[str] | None = Field(None, max_length=4)
     nivel_riesgo: str | None = None
     estado: str | None = None
     sector_ciiu: str | None = Field(None, max_length=120)
@@ -125,6 +126,41 @@ class CambioCliente(BaseModel):
     notas: str | None = Field(None, max_length=2000)
 
 
+class NuevoCliente(CambioCliente):
+    razon_social: str = Field(min_length=2, max_length=200)
+
+
+def _conflicto_nit(e: Exception) -> None:
+    if "uq_clientes_organizacion_nit" in str(e):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un cliente con ese NIT en la organización.")
+
+
+def _resumen_ciiu(cambios: dict) -> str:
+    partes = []
+    if "actividades_ciiu" in cambios:
+        partes.append("CIIU: " + (", ".join(cambios["actividades_ciiu"] or []) or "ninguna"))
+    if "modelos_negocio" in cambios:
+        partes.append("modelos: " + (", ".join(cambios["modelos_negocio"] or []) or "ninguno"))
+    return f" ({'; '.join(partes)})" if partes else ""
+
+
+@router.post("/api/organizaciones/{organizacion_id}/clientes", status_code=201)
+def crear_cliente(organizacion_id: int, datos: NuevoCliente, request: Request, u: seg.Usuario = Depends(gestion)) -> dict:
+    """Alta manual: el equipo diligencia la ficha (RUT, actividades, modelos, riesgo) al crear el cliente."""
+    _existe_organizacion(organizacion_id)
+    cambios = datos.model_dump(exclude_unset=True)
+    try:
+        cid = cl.crear(_engine(), organizacion_id, cambios, u.username)
+    except cl.ErrorCliente as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        _conflicto_nit(e)
+        raise
+    seg.auditar(u, "CREATE", "clientes", f"Cliente «{cambios['razon_social'].strip()}» creado a mano por {u.username}"
+                f"{_resumen_ciiu(cambios)}", entidad_id=cid, ip=seg.ip_cliente(request), valores_nuevos=_json(cambios))
+    return {"id": cid}
+
+
 @router.patch("/api/clientes/{cliente_id}")
 def cambiar_cliente(cliente_id: int, datos: CambioCliente, request: Request, u: seg.Usuario = Depends(gestion)) -> dict:
     antes = _cliente(cliente_id)
@@ -134,10 +170,10 @@ def cambiar_cliente(cliente_id: int, datos: CambioCliente, request: Request, u: 
     except cl.ErrorCliente as e:
         raise HTTPException(400, str(e))
     except Exception as e:                      # NIT repetido dentro de la organización
-        if "uq_clientes_organizacion_nit" in str(e):
-            raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un cliente con ese NIT en la organización.")
+        _conflicto_nit(e)
         raise
-    seg.auditar(u, "UPDATE", "clientes", f"Cliente «{antes['razon_social']}» actualizado por {u.username}",
+    seg.auditar(u, "UPDATE", "clientes", f"Cliente «{antes['razon_social']}» actualizado por {u.username}"
+                f"{_resumen_ciiu(cambios)}",
                 entidad_id=cliente_id, ip=seg.ip_cliente(request), valores_nuevos=_json(cambios))
     return {"ok": True}
 
