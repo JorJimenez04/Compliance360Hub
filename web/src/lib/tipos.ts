@@ -154,3 +154,48 @@ export interface Cartera {
   global: Kpis | null; anterior: Kpis | null; total_empresas: number; empresas_con_movimiento: number;
   serie: { periodo: string; monto: number; pagos: number }[]; empresas: FilaCartera[];
 }
+
+// ---------- Clientes de la organización y su compliance (solo equipo interno) ----------
+export type EstadoAlerta = "nueva" | "en_analisis" | "descartada" | "escalada" | "posible_ros";
+export type Prioridad = "Crítica" | "Alta" | "Media" | "Baja";
+
+export interface ClienteFila {
+  id: number; razon_social: string; nit: string | null; nivel_riesgo: string; estado: string;
+  modelos_negocio: string[]; proxima_revision: string | null; empresas: { id: number; nombre: string }[];
+  alertas_abiertas: number; alertas_altas: number;
+}
+export interface EmpresaSinCliente { id: number; nombre: string; transacciones: number }
+
+export interface AlertaCaso {
+  id: number; organizacion_id: number; empresa_id: number; empresa: string; cliente_id: number | null;
+  regla: string; periodo: string; tipo: string | null; prioridad: Prioridad; titulo: string;
+  descripcion: string | null; accion_requerida: string | null; valor_detectado: number | null; umbral: number | null;
+  requiere_reporte_uiaf: boolean; detectada_en: string; actualizada_en: string; fecha_limite: string | null;
+  estado: EstadoAlerta; analista_id: number | null; analista: string | null; justificacion: string | null;
+  decidida_por: string | null; decidida_en: string | null;
+}
+export interface EventoAlerta {
+  id: number; usuario: string; accion: string; estado_anterior: string | null; estado_nuevo: string | null;
+  nota: string | null; creado_en: string;
+}
+export interface AlertaDetalle extends AlertaCaso { eventos: EventoAlerta[]; transiciones: EstadoAlerta[] }
+
+export interface FichaCliente {
+  id: number; organizacion_id: number; organizacion: string; razon_social: string; nit: string | null;
+  tipo_persona: "juridica" | "natural"; modelos_negocio: string[]; nivel_riesgo: string; estado: string;
+  sector_ciiu: string | null; pais_constitucion: string | null; sitio_web: string | null;
+  proxima_revision: string | null; fecha_ultima_calificacion: string | null; notas: string | null;
+  perfil_volumen_mensual: number | null; perfil_operaciones_mes: number | null; perfil_ticket_promedio: number | null;
+  perfil_paises: string[]; perfil_actualizado: string | null;
+  empresas: { id: number; nombre: string; activa: boolean }[];
+  riesgo_sugerido: Nivel | null;
+  operacion: { desde: string | null; hasta: string | null; kpis: Kpis | null; ultima_operacion: string | null };
+  alertas_resumen: { abiertas: number; total: number; por_prioridad: Record<Prioridad, number>; posible_ros: number };
+  paquete: { nivel: Nivel; nivel_es_provisional: boolean; documentos: DocumentoPaquete[] };
+}
+export interface PerfilVsReal {
+  declarado: { volumen_mensual: number | null; operaciones_mes: number | null; ticket_promedio: number | null;
+    paises: string[]; actualizado: string | null };
+  meses: { periodo: string; monto_pagado: number; operaciones: number; ticket_promedio: number;
+    desv_volumen: number | null; desv_operaciones: number | null; desv_ticket: number | null }[];
+}

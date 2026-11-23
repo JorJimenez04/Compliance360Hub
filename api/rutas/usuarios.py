@@ -99,12 +99,15 @@ def _reglas_de_perfil(rol: str, organizacion_id: int | None, alcance: str | None
     elif organizacion_id is not None:
         raise HTTPException(400, "El equipo interno (compliance) no pertenece a una organización.")
     if rol == "cliente":
-        if alcance not in (ALCANCE_ORGANIZACION, ALCANCE_EMPRESAS):
-            raise HTTPException(400, "Indique el alcance: toda la organización o empresas específicas.")
-        if alcance == ALCANCE_EMPRESAS and not empresas:
-            raise HTTPException(400, "Con alcance «empresas específicas» debe asignar al menos una empresa.")
-        if alcance == ALCANCE_ORGANIZACION and empresas:
-            raise HTTPException(400, "Con alcance «toda la organización» no se asignan empresas.")
+        # Decisión 2026-11-23: los clientes de los clientes no tienen acceso. Un usuario «cliente» es
+        # siempre del equipo de la organización y ve toda su operación (nunca el compliance interno).
+        if alcance == ALCANCE_EMPRESAS:
+            raise HTTPException(400, "Los clientes de sus clientes no tienen acceso a la plataforma: "
+                                     "el perfil Cliente es para el equipo de la organización.")
+        if alcance != ALCANCE_ORGANIZACION:
+            raise HTTPException(400, "Indique el alcance del usuario.")
+        if empresas:
+            raise HTTPException(400, "El perfil Cliente ve toda su organización: no se asignan empresas.")
     elif alcance is not None or empresas:
         raise HTTPException(400, "El alcance y las empresas solo aplican al perfil cliente.")
 
@@ -182,6 +185,9 @@ def cambiar(usuario_id: int, datos: CambioUsuario, request: Request,
                     raise HTTPException(400, "Correo no válido.")
                 valores["email"] = email
             if cambios.get("activo") is not None:
+                if cambios["activo"] and fila["rol"] == ROL_CLIENTE and fila["alcance"] == ALCANCE_EMPRESAS \
+                        and cambios.get("alcance") != ALCANCE_ORGANIZACION:
+                    raise HTTPException(400, "Este usuario era de un cliente de su cliente: esos perfiles ya no tienen acceso.")
                 valores["activo"] = 1 if cambios["activo"] else 0
             toca_alcance = "alcance" in cambios or "empresas" in cambios
             if toca_alcance:

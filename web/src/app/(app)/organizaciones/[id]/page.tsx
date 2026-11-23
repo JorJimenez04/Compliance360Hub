@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import FichaOrganizacion from "@/components/organizaciones/ficha";
+import OrganizacionVista from "@/components/organizaciones/organizacion";
 
-export const metadata: Metadata = { title: "Ficha de la organización" };
+export const metadata: Metadata = { title: "Organización" };
 
 export default async function PaginaFicha({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <FichaOrganizacion id={Number(id)} />;
+  return <OrganizacionVista id={Number(id)} />;
 }

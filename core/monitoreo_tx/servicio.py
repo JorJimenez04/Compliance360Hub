@@ -99,17 +99,13 @@ class MonitoreoService:
 
     # ---------- Empresas ----------
     def _cliente_puede_ver(self, user: dict, empresa: EmpresaVista) -> bool:
-        """Alcance de un usuario «cliente». Ante cualquier dato faltante, niega.
-
-        1. La empresa debe ser de su organización (sin organización no ve nada).
-        2. Con alcance 'organizacion' ve todas las de su organización; con cualquier
-           otro valor, solo las asignadas en usuario_empresas."""
+        """Alcance de un usuario «cliente». Ante cualquier dato faltante, niega."""
         org = user.get("organizacion_id")
         if org is None or empresa.organizacion_id != org:
             return False
-        if user.get("alcance") == ALCANCE_ORGANIZACION:
-            return True
-        return empresa.id in self.empresas_repo.ids_de_usuario(user["id"])
+        # Solo el equipo de la organización (alcance 'organizacion'). Los usuarios de alcance 'empresas'
+        # eran personas de los clientes de la organización: desde la migración 040 no ven nada.
+        return user.get("alcance") == ALCANCE_ORGANIZACION
 
     def empresas(self, user: dict, solo_activas: bool = True,
                  organizacion_id: int | None = None) -> list[EmpresaVista]:
@@ -311,6 +307,10 @@ class MonitoreoService:
         except Exception as e:
             registrar_auditoria(user, "CREATE", f"Monitoreo TX: carga fallida de «{nombre_archivo}»: {e}")
             raise
+        if resumen.resultado == "OK":
+            # Alertas del monitoreo (cumplimiento): sobre las empresas de esta carga, sin bloquear la respuesta
+            from core.cumplimiento.alertas import evaluar_en_segundo_plano
+            evaluar_en_segundo_plano(self.engine, list(resumen.verificacion) or None, user.get("username", "carga"))
         registrar_auditoria(
             user, "CREATE",
             f"Monitoreo TX: carga «{nombre_archivo}» · {resumen.resultado} · "
@@ -387,6 +387,9 @@ class MonitoreoService:
         if fuente is None:
             raise ErrorValidacion("OneDrive no está configurado o no está conectado.")
         resumen = revisar(fuente, self.engine, usuario=user.get("username", "manual"))
+        if getattr(resumen, "cargados", 0):
+            from core.cumplimiento.alertas import evaluar_en_segundo_plano
+            evaluar_en_segundo_plano(self.engine, None, user.get("username", "manual"))
         registrar_auditoria(user, "CREATE", f"Monitoreo TX: sincronización manual con OneDrive · "
                                             f"{resumen.resultado} · {resumen.mensaje}"[:900])
         return resumen

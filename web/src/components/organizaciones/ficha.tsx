@@ -18,7 +18,7 @@ type Edicion = Pick<Ficha, "tipo_persona" | "servicios" | "modelos_negocio" | "r
 const CAMPOS: (keyof Edicion)[] = ["tipo_persona", "servicios", "modelos_negocio", "regimen", "nivel_riesgo",
   "fecha_calificacion", "proxima_revision", "oficial_principal_id", "oficial_suplente", "fecha_designacion", "acta_designacion"];
 
-export default function FichaOrganizacion({ id }: { id: number }) {
+export default function FichaOrganizacion({ id, embebida = false }: { id: number; embebida?: boolean }) {
   const { rol } = useSesion();
   const puedeEditar = rol === "super_admin";
   const ficha = useDatos<Ficha>(`/api/organizaciones/${id}`);
@@ -55,9 +55,9 @@ export default function FichaOrganizacion({ id }: { id: number }) {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <Link href="/organizaciones" className="mb-2 inline-flex items-center gap-1.5 text-sm text-texto-3 hover:text-texto">
-            <ArrowLeft className="size-4" aria-hidden />Organizaciones</Link>
-          <h1 className="text-2xl font-semibold tracking-tight">{f.nombre}</h1>
+          {!embebida && <Link href="/organizaciones" className="mb-2 inline-flex items-center gap-1.5 text-sm text-texto-3 hover:text-texto">
+            <ArrowLeft className="size-4" aria-hidden />Organizaciones</Link>}
+          {!embebida && <h1 className="text-2xl font-semibold tracking-tight">{f.nombre}</h1>}
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-texto-3">
             {f.nit && <span>NIT {f.nit}</span>}
             <Insignia tono={tonoRiesgo(f.nivel_riesgo)}>Riesgo {f.nivel_riesgo}</Insignia>

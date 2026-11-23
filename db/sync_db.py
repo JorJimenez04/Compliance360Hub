@@ -73,6 +73,7 @@ ALL_MIGRATIONS: list[str] = [
     "037_rol_cliente.sql",
     "038_organizaciones.sql",
     "039_ficha_organizacion.sql",
+    "040_clientes_alertas.sql",
 ]
 
 # Tablas / columnas a validar tras las migraciones
@@ -86,6 +87,7 @@ VALIDATION_QUERIES: list[tuple[str, str]] = [
     ("tx_archivos_nube",  "SELECT COUNT(*) FROM tx_archivos_nube"),
     ("usuario_empresas",  "SELECT COUNT(*) FROM usuario_empresas"),
     ("organizaciones",    "SELECT COUNT(*) FROM organizaciones"),
+    ("cmp_alertas",       "SELECT COUNT(*) FROM cmp_alertas"),
     ("usuarios.organizacion_id (col)", "SELECT organizacion_id, alcance FROM usuarios LIMIT 1"),
 ]
 

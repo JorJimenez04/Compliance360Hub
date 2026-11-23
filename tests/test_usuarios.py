@@ -261,23 +261,27 @@ def test_usuario_o_correo_repetido_responde_409(pg):
         assert e.value.status_code == 409
 
 
-def test_cambiar_alcance_y_empresas(pg):
+def test_los_clientes_de_los_clientes_no_tienen_acceso(pg):
+    """Decisión 2026-11-23: no se crea ni se reactiva un usuario de alcance 'empresas'."""
     from sqlalchemy import text
     engine, _ = pg
     org = _org(engine)
-    e1, e2 = _empresa(engine, "E1", org), _empresa(engine, "E2", org)
-    r = _crear({"username": "cli.z", "nombre": "Zeta", "email": "z@x.co", "rol": "cliente",
+    e1 = _empresa(engine, "E1", org)
+    with pytest.raises(HTTPException) as e:
+        _crear({"username": "cli.z", "nombre": "Zeta", "email": "z@x.co", "rol": "cliente",
                 "organizacion_id": org, "alcance": "empresas", "empresas": [e1]})
+    assert e.value.status_code == 400
     jefe = seg.Usuario(1, "jefe", "Jefe", "super_admin")
-    ru.cambiar(r["id"], ru.CambioUsuario(empresas=[e1, e2]), _Peticion(), jefe)
+    viejo = _id(engine, "cli")                               # cliente de la 037, alcance 'empresas', inactivo
+    with pytest.raises(HTTPException):
+        ru.cambiar(viejo, ru.CambioUsuario(activo=True), _Peticion(), jefe)
+    # Convertirlo en usuario del equipo de la organización sí es posible
+    ru.cambiar(viejo, ru.CambioUsuario(alcance="organizacion", activo=True), _Peticion(), jefe)
     with engine.connect() as c:
-        assert set(c.scalars(text("SELECT empresa_id FROM usuario_empresas WHERE usuario_id = :u"), {"u": r["id"]})) == {e1, e2}
-    ru.cambiar(r["id"], ru.CambioUsuario(alcance="organizacion"), _Peticion(), jefe)
-    with engine.connect() as c:
-        assert c.scalar(text("SELECT alcance FROM usuarios WHERE id = :u"), {"u": r["id"]}) == "organizacion"
-        assert c.scalar(text("SELECT count(*) FROM usuario_empresas WHERE usuario_id = :u"), {"u": r["id"]}) == 0
-    with pytest.raises(HTTPException):                       # volver a 'empresas' exige asignar alguna
-        ru.cambiar(r["id"], ru.CambioUsuario(alcance="empresas"), _Peticion(), jefe)
+        assert c.execute(text("SELECT alcance, activo FROM usuarios WHERE id = :u"), {"u": viejo}).one() == ("organizacion", 1)
+        assert c.scalar(text("SELECT count(*) FROM usuario_empresas WHERE usuario_id = :u"), {"u": viejo}) == 0
+    r = _crear({"username": "equipo.z", "nombre": "Zeta", "email": "z2@x.co", "rol": "cliente",
+                "organizacion_id": org, "alcance": "organizacion"})
     ru.cambiar(r["id"], ru.CambioUsuario(activo=False), _Peticion(), jefe)
     with engine.connect() as c:
         assert c.scalar(text("SELECT activo FROM usuarios WHERE id = :u"), {"u": r["id"]}) == 0

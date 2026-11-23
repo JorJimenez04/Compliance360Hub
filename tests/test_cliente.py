@@ -76,7 +76,7 @@ class RepoCargas:
 
 class RepoTransacciones:
     def conteo_por_cliente(self):
-        return {"Mi Empresa": 5, "Otra Empresa": 99}
+        return {"Mi Empresa": 5, "Otra Empresa": 99, "Empresa de Otra Org": 7}
 
     def rango_fechas(self, cliente):
         return (None, None)
@@ -95,9 +95,11 @@ def srv():
 
 
 # ---------- Alcance por empresa (servicio) ----------
-def test_cliente_solo_lista_sus_empresas(srv):
-    assert [e.id for e in srv.empresas(CLIENTE)] == [1]
+def test_clientes_de_clientes_no_ven_nada_y_el_equipo_ve_su_organizacion(srv):
+    """Decisión 2026-11-23: alcance 'empresas' (personas de los clientes de la organización) no ve nada."""
+    assert srv.empresas(CLIENTE) == []
     assert srv.empresas(CLIENTE_SIN_EMPRESAS) == []
+    assert {e.id for e in srv.empresas(CLIENTE_ORG)} == {1, 2}
 
 
 def test_interno_ve_todas_las_empresas(srv):
@@ -149,13 +151,15 @@ def test_no_se_enlaza_una_empresa_con_un_cliente_de_otra_organizacion(srv):
 
 
 def test_cliente_accede_a_su_empresa(srv):
-    assert srv.opciones_filtro(CLIENTE, 1).tiene_datos is False   # llega a la consulta (sin datos de prueba)
+    assert srv.opciones_filtro(CLIENTE_ORG, 1).tiene_datos is False   # llega a la consulta (sin datos de prueba)
+    with pytest.raises(NoEncontrado):
+        srv.opciones_filtro(CLIENTE, 1)                                # alcance 'empresas': ya no
 
 
 def test_empresa_ajena_e_inexistente_se_ven_igual(srv):
     """No se confirma al cliente que otra empresa exista: mismo error y mismo mensaje."""
     with pytest.raises(NoEncontrado) as ajena:
-        srv.opciones_filtro(CLIENTE, 2)
+        srv.opciones_filtro(CLIENTE_ORG, 3)
     with pytest.raises(NoEncontrado) as inexistente:
         srv.opciones_filtro(CLIENTE, 999)
     assert str(ajena.value) == str(inexistente.value)
@@ -174,9 +178,9 @@ def test_cliente_no_lee_empresas_ajenas(srv, operacion):
 
 
 def test_conteo_solo_de_sus_empresas(srv):
-    assert srv.conteo_por_empresa(CLIENTE) == {"Mi Empresa": 5}
-    assert srv.conteo_por_empresa(COMPLIANCE) == {"Mi Empresa": 5, "Otra Empresa": 99}
-
+    assert srv.conteo_por_empresa(CLIENTE_ORG) == {"Mi Empresa": 5, "Otra Empresa": 99}
+    assert srv.conteo_por_empresa(CLIENTE) == {}
+    assert srv.conteo_por_empresa(COMPLIANCE) == {"Mi Empresa": 5, "Otra Empresa": 99, "Empresa de Otra Org": 7}
 
 # ---------- Lo interno nunca llega al cliente (servicio) ----------
 @pytest.mark.parametrize("operacion", [
@@ -285,7 +289,7 @@ from fastapi.routing import APIRoute  # noqa: E402
 
 from api import seguridad as seg  # noqa: E402
 
-U_CLIENTE = seg.Usuario(10, "cli", "Cli", "cliente", organizacion_id=1, alcance="empresas")
+U_CLIENTE = seg.Usuario(12, "cli3", "Cli", "cliente", organizacion_id=1, alcance="organizacion")
 U_COMPLIANCE = seg.Usuario(1, "ana", "Ana", "compliance")
 
 
@@ -360,7 +364,7 @@ def rutas(monkeypatch, srv):
     lambda r, eid: r.tablero(eid, None, None, None, "", None, u=U_CLIENTE),
     lambda r, eid: r.transacciones(eid, None, None, None, "", 1, 50, u=U_CLIENTE),
 ])
-@pytest.mark.parametrize("empresa_id", [2, 999])
+@pytest.mark.parametrize("empresa_id", [3, 999])
 def test_empresa_ajena_responde_404_al_cliente(rutas, llamada, empresa_id):
     with pytest.raises(HTTPException) as e:
         llamada(rutas, empresa_id)
@@ -369,10 +373,10 @@ def test_empresa_ajena_responde_404_al_cliente(rutas, llamada, empresa_id):
 
 def test_resumen_del_cliente_no_trae_datos_internos(rutas):
     datos = rutas.resumen(u=U_CLIENTE)
-    assert [e["id"] for e in datos["empresas"]] == [1]
-    e = datos["empresas"][0]
-    assert e["nivel_riesgo"] is None and e["nit"] is None and e["cliente_id"] is None
-    assert e["razon_social"] is None and e["enlazada"] is False
+    assert {e["id"] for e in datos["empresas"]} == {1, 2}
+    for e in datos["empresas"]:
+        assert e["nivel_riesgo"] is None and e["nit"] is None and e["cliente_id"] is None
+        assert e["razon_social"] is None and e["enlazada"] is False
     assert datos["puede_cargar"] is False
     assert "Alto" not in str(datos) and "900.111.222-3" not in str(datos)
 
@@ -386,7 +390,7 @@ def test_resumen_interno_conserva_el_detalle(rutas):
 
 
 def test_resumen_del_cliente_ignora_la_organizacion_pedida(rutas):
-    assert [e["id"] for e in rutas.resumen(organizacion_id=2, u=U_CLIENTE)["empresas"]] == [1]
+    assert {e["id"] for e in rutas.resumen(organizacion_id=2, u=U_CLIENTE)["empresas"]} == {1, 2}
 
 
 def test_perfil_del_cliente_solo_monitoreo():
@@ -437,9 +441,11 @@ def test_asignacion_y_alcance_contra_postgres(engine_pg):
     srv = MonitoreoService(engine_pg)
     user = {"id": uid, "username": "cli", "rol": "cliente", "organizacion_id": org, "alcance": "empresas"}
     assert EmpresasRepo(engine_pg).ids_de_usuario(uid) == {ids["Mi Empresa"]}
-    assert [e.nombre_reporte for e in srv.empresas(user)] == ["Mi Empresa"]
+    assert srv.empresas(user) == []                      # aunque tenga asignación: ya no ve nada
     with pytest.raises(NoEncontrado):
-        srv.opciones_filtro(user, ids["Otra Empresa"])
+        srv.opciones_filtro(user, ids["Mi Empresa"])
+    equipo = {**user, "alcance": "organizacion"}
+    assert {e.nombre_reporte for e in srv.empresas(equipo)} == {"Mi Empresa", "Otra Empresa"}
 
 
 def test_la_base_acepta_el_rol_cliente_y_rechaza_uno_inventado(engine_pg):

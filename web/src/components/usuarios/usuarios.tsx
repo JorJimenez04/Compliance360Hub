@@ -7,7 +7,7 @@ import { useDatos } from "@/lib/useDatos";
 import { useSesion } from "@/lib/sesion";
 import { fechaHora } from "@/lib/formato";
 import { Aviso, Boton, Entrada, Esqueleto, Etiqueta, Insignia, Selector, Tarjeta, TituloTarjeta, Vacio } from "@/components/ui/basicos";
-import type { Alcance, Empresa, Organizacion, PerfilGestionado, UsuarioGestionado } from "@/lib/tipos";
+import type { Alcance, Organizacion, PerfilGestionado, UsuarioGestionado } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
 
 const PERFILES: Record<PerfilGestionado, { nombre: string; descripcion: string }> = {
@@ -26,9 +26,6 @@ export default function Usuarios() {
   const usuarios = useDatos<{ usuarios: UsuarioGestionado[] }>(esSuper ? "/api/usuarios" : null);
   const orgs = useDatos<{ organizaciones: Organizacion[] }>(esSuper ? "/api/organizaciones" : null);
   const [form, setForm] = useState(VACIO);
-  const empresasOrg = useDatos<{ empresas: Empresa[] }>(
-    esSuper && form.rol === "cliente" && form.alcance === "empresas" && form.organizacion_id
-      ? `/api/monitoreo/empresas?organizacion_id=${form.organizacion_id}` : null);
   const [creando, setCreando] = useState(false);
   const [confirmar, setConfirmar] = useState<number | null>(null);
   const [trabajando, setTrabajando] = useState<number | null>(null);
@@ -42,7 +39,7 @@ export default function Usuarios() {
 
   const externo = form.rol !== "compliance";
   const listo = form.username.trim().length >= 3 && form.nombre.trim().length >= 2 && form.email.includes("@")
-    && (!externo || form.organizacion_id) && (form.rol !== "cliente" || form.alcance === "organizacion" || form.empresas.length > 0);
+    && (!externo || form.organizacion_id);
 
   async function crear(ev: React.FormEvent) {
     ev.preventDefault();
@@ -52,7 +49,7 @@ export default function Usuarios() {
         username: form.username.trim(), nombre: form.nombre.trim(), email: form.email.trim(), rol: form.rol,
         organizacion_id: externo ? Number(form.organizacion_id) : null,
         alcance: form.rol === "cliente" ? form.alcance : null,
-        empresas: form.rol === "cliente" && form.alcance === "empresas" ? form.empresas : [],
+        empresas: [],
       };
       const r = await enviar<{ username: string; clave_temporal: string }>("/api/usuarios", cuerpo);
       setResultado({ ...r, titulo: `Usuario «${r.username}» creado` });
@@ -149,39 +146,8 @@ export default function Usuarios() {
                   {activas.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
                 </Selector></div>
               {form.rol === "cliente" && (
-                <div className="md:col-span-2">
-                  <Etiqueta>Qué puede ver</Etiqueta>
-                  <div className="flex flex-wrap gap-4 pt-1.5 text-sm">
-                    <label className="inline-flex items-center gap-2"><input type="radio" name="alcance" checked={form.alcance === "organizacion"}
-                      onChange={() => poner({ alcance: "organizacion", empresas: [] })} />Toda la organización</label>
-                    <label className="inline-flex items-center gap-2"><input type="radio" name="alcance" checked={form.alcance === "empresas"}
-                      onChange={() => poner({ alcance: "empresas" })} />Solo empresas específicas</label>
-                  </div>
-                </div>
+                <p className="text-[13px] text-texto-3 md:col-span-2">Ve en solo lectura la operación de toda la organización (monitoreo, cartera y transacciones). No ve alertas, casos, riesgo ni reportes UIAF.</p>
               )}
-            </div>
-          )}
-
-          {form.rol === "cliente" && form.alcance === "empresas" && form.organizacion_id && (
-            <div>
-              <Etiqueta>Empresas que puede consultar</Etiqueta>
-              {!empresasOrg.datos ? <Esqueleto className="h-10" />
-                : empresasOrg.datos.empresas.length === 0 ? <p className="text-sm text-texto-3">Esta organización aún no tiene empresas monitoreadas.</p>
-                : (
-                  <div className="flex flex-wrap gap-2">
-                    {empresasOrg.datos.empresas.map((e) => {
-                      const marcada = form.empresas.includes(e.id);
-                      return (
-                        <label key={e.id} className={cn("cursor-pointer rounded-lg border px-3 py-1.5 text-sm",
-                          marcada ? "border-acento bg-acento-tenue text-acento" : "border-borde-fuerte text-texto-2")}>
-                          <input type="checkbox" className="sr-only" checked={marcada}
-                            onChange={() => poner({ empresas: marcada ? form.empresas.filter((x) => x !== e.id) : [...form.empresas, e.id] })} />
-                          {e.nombre}
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
             </div>
           )}
 
@@ -209,7 +175,7 @@ export default function Usuarios() {
                       <td className="py-3 pr-4"><p className="font-medium">{u.nombre}</p><p className="text-xs text-texto-3">{u.username} · {u.email}</p></td>
                       <td className="pr-4">{PERFILES[u.rol]?.nombre ?? u.rol}</td>
                       <td className="pr-4">{u.organizacion ?? <span className="text-texto-3">Equipo interno</span>}</td>
-                      <td className="pr-4 text-texto-2">{u.rol !== "cliente" ? "—" : u.alcance === "organizacion" ? "Toda la organización" : u.empresas || "Sin empresas"}</td>
+                      <td className="pr-4 text-texto-2">{u.rol !== "cliente" ? "—" : u.alcance === "organizacion" ? "Toda la organización" : "Sin acceso (cliente de cliente)"}</td>
                       <td className="pr-4 text-texto-3">{u.ultimo_acceso ? fechaHora(u.ultimo_acceso) : "Nunca"}</td>
                       <td className="pr-4"><Insignia tono={u.activo ? "ok" : "neutro"}>{u.activo ? "Activo" : "Inactivo"}</Insignia></td>
                       <td className="whitespace-nowrap text-right">

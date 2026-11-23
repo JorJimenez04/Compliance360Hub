@@ -16,7 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from config.settings import APP_ENV
-from api.rutas import auth, monitoreo, organizaciones, usuarios
+from api.rutas import auth, clientes, monitoreo, organizaciones, usuarios
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
@@ -54,3 +54,4 @@ app.include_router(monitoreo.router)
 app.include_router(organizaciones.router)
 app.include_router(organizaciones.router_catalogo)
 app.include_router(usuarios.router)
+app.include_router(clientes.router)
