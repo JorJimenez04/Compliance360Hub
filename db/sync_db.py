@@ -170,6 +170,7 @@ def validate_schema() -> bool:
                 conn.execute(text(query))
                 _print("✅", f"{label} — OK")
             except Exception as exc:
+                conn.rollback()        # sin esto, un fallo aborta la transacción y arrastra a las siguientes
                 short = str(exc).splitlines()[0][:100]
                 _print("❌", f"{label} — FALLO: {short}")
                 all_ok = False
