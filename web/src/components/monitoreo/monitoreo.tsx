@@ -44,9 +44,11 @@ export default function Monitoreo() {
   const empresas = useMemo(() => (resumen.datos?.empresas ?? []).filter((e) => e.activa && (e.transacciones ?? 0) > 0), [resumen.datos]);
   const idParam = Number(params.get("empresa"));
   const elegida = empresas.find((e) => e.id === idParam);
-  // Tablero sin empresa elegida y con varias empresas: vista de cartera (todas a la vista).
+  // Tablero sin empresa elegida: vista de cartera (todas a la vista). El equipo interno siempre la ve;
+  // un cliente con una sola empresa entra directo a su tablero.
   // Transacciones y Riesgo siempre trabajan sobre una empresa: si no hay una elegida, la de más movimientos.
-  const enCartera = vista === "tablero" && !elegida && empresas.length > 1;
+  const conCartera = empresas.length > 1 || (!esCliente && empresas.length > 0);
+  const enCartera = vista === "tablero" && !elegida && conCartera;
   const empresa = enCartera ? undefined
     : elegida ?? [...empresas].sort((a, b) => (b.transacciones ?? 0) - (a.transacciones ?? 0))[0];
 
@@ -97,7 +99,7 @@ export default function Monitoreo() {
             </Selector>
           </div>
         )}
-        {empresas.length > 1 && vista !== "cargas" && vista !== "empresas" && (
+        {(empresas.length > 1 || (vista === "tablero" && conCartera)) && vista !== "cargas" && vista !== "empresas" && (
           <div className="flex items-center gap-3">
             <label htmlFor="empresa" className="text-sm text-texto-3">Empresa</label>
             <Selector id="empresa" className="w-72" value={empresa?.id ?? ""}
@@ -146,7 +148,7 @@ export default function Monitoreo() {
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              {vista === "tablero" && empresas.length > 1 && (
+              {vista === "tablero" && conCartera && (
                 <button onClick={() => cambiar({ empresa: null })}
                   className="mr-2 inline-flex items-center gap-1.5 rounded-lg border border-borde-fuerte px-2.5 py-1 text-[13px] text-texto-2 hover:border-texto-3 hover:text-texto">
                   <ArrowLeft className="size-3.5" aria-hidden />Todas las empresas
