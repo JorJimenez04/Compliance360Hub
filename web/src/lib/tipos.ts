@@ -143,3 +143,14 @@ export interface Ficha {
   riesgo_sugerido: Nivel | null; monitoreo_sugerido: string[];
   oficiales_disponibles: { id: number; nombre: string }[];
 }
+
+// ---------- Cartera: todas las empresas a la vista (GET /api/monitoreo/cartera) ----------
+export interface FilaCartera extends Empresa {
+  kpis: Kpis | null; kpis_anterior: Kpis | null; participacion: number;
+  ultima_operacion: string | null; tendencia: number[];
+}
+export interface Cartera {
+  desde: string | null; hasta: string | null; granularidad: "Diaria" | "Semanal" | "Mensual";
+  global: Kpis | null; anterior: Kpis | null; total_empresas: number; empresas_con_movimiento: number;
+  serie: { periodo: string; monto: number; pagos: number }[]; empresas: FilaCartera[];
+}

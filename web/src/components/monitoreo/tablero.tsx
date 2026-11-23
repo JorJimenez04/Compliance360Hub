@@ -98,7 +98,7 @@ function agruparOtros<T extends { banco: string; pagos: number; monto: number; p
     monto: resto.reduce((s, f) => s + f.monto, 0), pct: resto.reduce((s, f) => s + f.pct, 0) } as T];
 }
 
-function Kpi({ titulo, valor, detalle, variacion }: { titulo: string; valor: string; detalle?: React.ReactNode; variacion?: React.ReactNode }) {
+export function Kpi({ titulo, valor, detalle, variacion }: { titulo: string; valor: string; detalle?: React.ReactNode; variacion?: React.ReactNode }) {
   return (
     <Tarjeta className="px-5 py-4">
       <p className="text-[13px] text-texto-3">{titulo}</p>

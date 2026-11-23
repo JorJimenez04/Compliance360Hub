@@ -313,6 +313,8 @@ RUTAS_INTERNAS = [
 ]
 RUTAS_DEL_CLIENTE = [
     ("get", "/api/monitoreo/resumen"),
+    ("get", "/api/monitoreo/cartera"),
+    ("get", "/api/monitoreo/cartera/opciones"),
     ("get", "/api/monitoreo/empresas/{empresa_id}/opciones"),
     ("get", "/api/monitoreo/empresas/{empresa_id}/tablero"),
     ("get", "/api/monitoreo/empresas/{empresa_id}/transacciones"),
@@ -494,3 +496,49 @@ def test_la_base_impone_las_reglas_de_organizacion(engine_pg):
         with pytest.raises(IntegrityError):
             with engine_pg.begin() as conn:
                 conn.execute(text(sql))
+
+
+# ---------- Cartera (vista de todas las empresas) ----------
+def test_cartera_respeta_organizacion_y_alcance(excel, engine_pg, tmp_path):
+    """La cartera suma solo lo que el usuario puede ver y al cliente no le llega el riesgo."""
+    from sqlalchemy import text
+    from core.monitoreo_tx.etl.sync import sincronizar
+    from api.rutas import monitoreo as rutas_m
+    sincronizar(excel, engine_pg, directorio_logs=tmp_path)
+    with engine_pg.begin() as conn:
+        otra = conn.execute(text("INSERT INTO organizaciones (nombre) VALUES ('Otra Org') RETURNING id")).scalar_one()
+        conn.execute(text("UPDATE tx_empresas SET organizacion_id = :o WHERE nombre_reporte = 'Cliente B'"), {"o": otra})
+        adamo = conn.execute(text("SELECT id FROM organizaciones WHERE nombre = 'Adamo'")).scalar_one()
+    srv = MonitoreoService(engine_pg)
+    interno = {"id": 1, "username": "ana", "rol": "compliance"}
+    todo = srv.cartera(interno, FiltrosTransacciones())
+    assert {f["empresa"].nombre_reporte for f in todo["empresas"]} == {"Cliente A", "Cliente B"}
+    solo_a = srv.cartera(interno, FiltrosTransacciones(), organizacion_id=adamo)
+    assert [f["empresa"].nombre_reporte for f in solo_a["empresas"]] == ["Cliente A"]
+    # El global de una organización es la suma de sus empresas
+    assert solo_a["global"].monto_pagado == solo_a["empresas"][0]["kpis"].monto_pagado
+    assert todo["global"].monto_pagado == sum(f["kpis"].monto_pagado for f in todo["empresas"] if f["kpis"])
+    assert abs(sum(f["participacion"] for f in todo["empresas"]) - 1) < 1e-9
+
+    cliente_b = seg.Usuario(50, "clib", "B", "cliente", organizacion_id=otra, alcance="organizacion")
+    import pytest as _p
+    mp = _p.MonkeyPatch()
+    mp.setattr(rutas_m, "servicio", lambda: srv)
+    mp.setattr(rutas_m, "registrar_auditoria", lambda *a, **k: None)
+    try:
+        r = rutas_m.cartera(adamo, None, None, None, u=cliente_b)        # pide Adamo: se ignora
+        assert [e["nombre_reporte"] for e in r["empresas"]] == ["Cliente B"]
+        assert all(e["nivel_riesgo"] is None and e["nit"] is None for e in r["empresas"])
+    finally:
+        mp.undo()
+
+
+@pytest.fixture
+def excel(tmp_path):
+    from tests.test_monitoreo_tx import COLS, _fila, _hoja_sucia
+    import pandas as pd
+    ruta = tmp_path / "reporte.xlsx"
+    with pd.ExcelWriter(ruta) as w:
+        _hoja_sucia().to_excel(w, sheet_name="Cliente A", index=False)
+        pd.DataFrame([_fila(1, "b-1", 7_000)], columns=COLS).to_excel(w, sheet_name="Cliente B", index=False)
+    return ruta

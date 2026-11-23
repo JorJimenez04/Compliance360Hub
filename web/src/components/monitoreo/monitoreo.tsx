@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Database, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Database, RefreshCw } from "lucide-react";
 import { Aviso, Boton, Esqueleto, Insignia, Selector, Tarjeta, Vacio, tonoRiesgo } from "@/components/ui/basicos";
 import { useDatos } from "@/lib/useDatos";
 import { useSesion } from "@/lib/sesion";
@@ -15,6 +15,7 @@ import VistaTransacciones from "./transacciones";
 import VistaRiesgo from "./riesgo";
 import VistaCargas from "./cargas";
 import VistaEmpresas from "./empresas";
+import VistaCartera from "./cartera";
 
 // externo: lo ve también el cliente. El resto es interno (Cumplimiento): riesgo, cargas y enlaces.
 const VISTAS = [
@@ -42,10 +43,18 @@ export default function Monitoreo() {
 
   const empresas = useMemo(() => (resumen.datos?.empresas ?? []).filter((e) => e.activa && (e.transacciones ?? 0) > 0), [resumen.datos]);
   const idParam = Number(params.get("empresa"));
-  const empresa = empresas.find((e) => e.id === idParam) ?? [...empresas].sort((a, b) => (b.transacciones ?? 0) - (a.transacciones ?? 0))[0];
+  const elegida = empresas.find((e) => e.id === idParam);
+  // Tablero sin empresa elegida y con varias empresas: vista de cartera (todas a la vista).
+  // Transacciones y Riesgo siempre trabajan sobre una empresa: si no hay una elegida, la de más movimientos.
+  const enCartera = vista === "tablero" && !elegida && empresas.length > 1;
+  const empresa = enCartera ? undefined
+    : elegida ?? [...empresas].sort((a, b) => (b.transacciones ?? 0) - (a.transacciones ?? 0))[0];
 
   const opciones = useDatos<Opciones>(empresa ? `/api/monitoreo/empresas/${empresa.id}/opciones` : null);
-  const filtros = useMemo(() => filtrosDesdeUrl(params, opciones.datos), [params, opciones.datos]);
+  const opcionesCartera = useDatos<Opciones>(enCartera
+    ? `/api/monitoreo/cartera/opciones${orgParam ? `?organizacion_id=${orgParam}` : ""}` : null);
+  const opcionesActivas = enCartera ? opcionesCartera.datos : opciones.datos;
+  const filtros = useMemo(() => filtrosDesdeUrl(params, opcionesActivas), [params, opcionesActivas]);
 
   const cambiar = useCallback((cambios: Record<string, string | string[] | null>) => {
     const q = new URLSearchParams(params.toString());
@@ -92,7 +101,8 @@ export default function Monitoreo() {
           <div className="flex items-center gap-3">
             <label htmlFor="empresa" className="text-sm text-texto-3">Empresa</label>
             <Selector id="empresa" className="w-72" value={empresa?.id ?? ""}
-              onChange={(e) => cambiar({ empresa: e.target.value })}>
+              onChange={(e) => cambiar({ empresa: e.target.value || null })}>
+              {vista === "tablero" && <option value="">Todas las empresas</option>}
               {empresas.map((e) => <option key={e.id} value={e.id}>{e.nombre} · {entero(e.transacciones)} mov.</option>)}
             </Selector>
           </div>
@@ -118,6 +128,14 @@ export default function Monitoreo() {
         : vista === "empresas" ? <VistaEmpresas alCambiar={resumen.recargar} organizacionId={orgParam || null}
             organizaciones={orgs.datos?.organizaciones ?? []} puedeMover={sesion.rol === "super_admin"} />
         : resumen.cargando && !resumen.datos ? <Esqueleto className="h-96 w-full rounded-tarjeta" />
+        : enCartera ? (
+          <>
+            {opcionesCartera.datos && <BarraFiltros filtros={filtros} opciones={opcionesCartera.datos} onCambio={ponerFiltros} />}
+            {!filtros ? <Esqueleto className="h-96 w-full rounded-tarjeta" />
+              : <VistaCartera filtros={filtros} organizacionId={orgParam || null} esCliente={esCliente}
+                  onAbrir={(id) => cambiar({ empresa: String(id) })} />}
+          </>
+        )
         : !empresa ? (
           <Tarjeta>
             <Vacio icono={<Database className="size-8" />} titulo="Aún no hay transacciones cargadas"
@@ -128,6 +146,12 @@ export default function Monitoreo() {
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2 text-sm">
+              {vista === "tablero" && empresas.length > 1 && (
+                <button onClick={() => cambiar({ empresa: null })}
+                  className="mr-2 inline-flex items-center gap-1.5 rounded-lg border border-borde-fuerte px-2.5 py-1 text-[13px] text-texto-2 hover:border-texto-3 hover:text-texto">
+                  <ArrowLeft className="size-3.5" aria-hidden />Todas las empresas
+                </button>
+              )}
               <span className="font-medium">{empresa.nombre}</span>
               {!esCliente && (empresa.enlazada
                 ? <>{empresa.nit && <span className="text-texto-3">NIT {empresa.nit}</span>}

@@ -262,6 +262,54 @@ def riesgo(
 
 
 # =========================
+# Cartera: todas las empresas a la vista
+# =========================
+@router.get("/cartera/opciones")
+def opciones_cartera(organizacion_id: int | None = None, u: seg.Usuario = Depends(ver)) -> dict:
+    try:
+        o = servicio().opciones_cartera(u.como_dict(), None if u.externo else organizacion_id)
+    except Exception as e:
+        _error(e)
+    return {"fecha_min": o.fecha_min.isoformat() if o.fecha_min else None,
+            "fecha_max": o.fecha_max.isoformat() if o.fecha_max else None,
+            "estados": list(o.estados), "continuidad": None}
+
+
+@router.get("/cartera")
+def cartera(
+    organizacion_id: int | None = None,
+    desde: date | None = None,
+    hasta: date | None = None,
+    estados: list[str] | None = Query(None),
+    u: seg.Usuario = Depends(ver),
+) -> dict:
+    """Indicadores globales y una fila por empresa. Al cliente no le llega la calificación de riesgo."""
+    user, interno_ = u.como_dict(), u.rol in ROLES_MONITOREO
+    try:
+        c = servicio().cartera(user, _filtros(desde, hasta, estados, ""), None if u.externo else organizacion_id)
+    except Exception as e:
+        _error(e)
+    if es_cliente(user):
+        registrar_auditoria(user, "READ", "Monitoreo TX: cliente consulta la cartera", entidad="tx_empresas")
+    serie = c.get("serie")
+    return {
+        "desde": c["desde"].isoformat() if c.get("desde") else None,
+        "hasta": c["hasta"].isoformat() if c.get("hasta") else None,
+        "granularidad": c["granularidad"],
+        "global": _kpis(c["global"]), "anterior": _kpis(c["anterior"]),
+        "total_empresas": len(c["empresas"]), "empresas_con_movimiento": c.get("empresas_con_movimiento", 0),
+        "serie": _registros(serie) if serie is not None else [],
+        "empresas": [{
+            **_empresa_json(f["empresa"], None, interno_),
+            "kpis": _kpis(f["kpis"]), "kpis_anterior": _kpis(f["kpis_anterior"]),
+            "participacion": f["participacion"],
+            "ultima_operacion": f["ultima_operacion"].isoformat() if f["ultima_operacion"] else None,
+            "tendencia": f["tendencia"],
+        } for f in c["empresas"]],
+    }
+
+
+# =========================
 # Empresas (administración del enlace con clientes)
 # =========================
 @router.get("/empresas")

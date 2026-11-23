@@ -665,3 +665,19 @@ def test_onedrive_encuentra_la_carpeta_fuera_de_la_raiz():
                       {"id": "b", "name": "adamopay_datos", "folder": {}}]
     with pytest.raises(ErrorFuente, match="Hay 2 carpetas"):
         FuenteOneDrive(_config_falsa(), sesion=graph).listar()
+
+
+def test_serie_desde_diario_alinea_periodos_y_solo_cuenta_pagos_exitosos():
+    from core.monitoreo_tx.domain import metricas
+    from datetime import date
+    diario = pd.DataFrame({
+        "fecha": [date(2026, 1, 5), date(2026, 1, 5), date(2026, 3, 2)],
+        "tipo_transaccion": ["Débito", "Crédito", "Débito"],
+        "exitosa": [True, True, False],
+        "transacciones": [2, 1, 4], "monto": [100.0, 30.0, 999.0],
+    })
+    s = metricas.serie_desde_diario(diario, "Mensual", date(2026, 1, 1), date(2026, 3, 31))
+    assert len(s) == 3                                   # enero, febrero (vacío) y marzo
+    assert s["monto"].tolist() == [100.0, 0.0, 0.0] and s["pagos"].tolist() == [2, 0, 0]
+    vacia = metricas.serie_desde_diario(diario.iloc[0:0], "Mensual", date(2026, 1, 1), date(2026, 3, 31))
+    assert len(vacia) == 3 and vacia["monto"].sum() == 0

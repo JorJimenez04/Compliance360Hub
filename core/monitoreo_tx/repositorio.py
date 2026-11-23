@@ -95,8 +95,8 @@ class TransaccionesRepo:
         return df
 
 
-def _filtrar(q, cliente: str, filtros: FiltrosTransacciones):
-    q = q.where(T.cliente == cliente)
+def _filtrar(q, cliente: str | list[str], filtros: FiltrosTransacciones):
+    q = q.where(T.cliente.in_(cliente) if isinstance(cliente, list) else T.cliente == cliente)
     if filtros.desde:
         q = q.where(T.fecha >= filtros.desde)
     if filtros.hasta:
@@ -111,6 +111,52 @@ def _filtrar(q, cliente: str, filtros: FiltrosTransacciones):
                         T.beneficiario, T.id_beneficiario)
         )))
     return q
+
+
+# =========================
+# Cartera: varias empresas en una sola consulta
+# =========================
+class CarteraRepo:
+    """Agregados de varias empresas a la vez. Sin permisos: el servicio decide qué empresas entran."""
+
+    def __init__(self, engine: Engine):
+        self.engine = engine
+
+    def opciones(self, clientes: list[str]) -> tuple[date | None, date | None, list[str]]:
+        if not clientes:
+            return None, None, []
+        with self.engine.connect() as conn:
+            minimo, maximo = conn.execute(
+                select(func.min(T.fecha), func.max(T.fecha)).where(T.cliente.in_(clientes))).one()
+            estados = list(conn.scalars(
+                select(T.estado).where(T.cliente.in_(clientes)).distinct().order_by(T.estado)))
+        return minimo, maximo, estados
+
+    def diario(self, clientes: list[str], filtros: FiltrosTransacciones) -> pd.DataFrame:
+        """Conteo y monto por (empresa, día, tipo, exitosa): pocas filas aunque haya millones de transacciones."""
+        cols = ["cliente", "fecha", "tipo_transaccion", "exitosa", "transacciones", "monto"]
+        if not clientes:
+            return pd.DataFrame(columns=cols)
+        q = _filtrar(
+            select(T.cliente, T.fecha, T.tipo_transaccion, T.exitosa,
+                   func.count().label("transacciones"), func.sum(T.monto).label("monto")),
+            clientes, filtros,
+        ).group_by(T.cliente, T.fecha, T.tipo_transaccion, T.exitosa)
+        with self.engine.connect() as conn:
+            df = pd.read_sql(q, conn)
+        if df.empty:
+            return pd.DataFrame(columns=cols)
+        df["exitosa"] = df["exitosa"].astype(bool)
+        df["monto"] = df["monto"].fillna(0.0)
+        return df
+
+    def ultima_operacion(self, clientes: list[str]) -> dict[str, object]:
+        if not clientes:
+            return {}
+        with self.engine.connect() as conn:
+            filas = conn.execute(select(T.cliente, func.max(T.fecha_hora))
+                                 .where(T.cliente.in_(clientes)).group_by(T.cliente))
+            return {c: f for c, f in filas}
 
 
 # =========================

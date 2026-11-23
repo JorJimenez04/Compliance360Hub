@@ -29,7 +29,7 @@ from core.monitoreo_tx.domain.continuidad import Continuidad, verificar_continui
 from core.monitoreo_tx.domain.entidades import EmpresaVista, FiltrosTransacciones, OpcionesFiltro
 from core.monitoreo_tx.domain.errores import NoEncontrado, PermisoDenegado
 from core.monitoreo_tx.etl.sync import ResumenSincronizacion, sincronizar
-from core.monitoreo_tx.repositorio import EmpresasRepo, SincronizacionesRepo, TransaccionesRepo
+from core.monitoreo_tx.repositorio import CarteraRepo, EmpresasRepo, SincronizacionesRepo, TransaccionesRepo
 from core.monitoreo_tx.risk_analysis import analizar_riesgo_cliente
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,8 @@ class MonitoreoService:
         self.transacciones = TransaccionesRepo(engine)
         self.empresas_repo = EmpresasRepo(engine)
         self.sincronizaciones = SincronizacionesRepo(engine)
+        self.cartera_repo = CarteraRepo(engine)
+        self._diario = lru_cache(maxsize=16)(self._diario_sin_cache)
         self._consultar = lru_cache(maxsize=4)(self._consultar_sin_cache)
         self._riesgo = lru_cache(maxsize=8)(self._riesgo_sin_cache)
         self._totales = lru_cache(maxsize=32)(self._totales_sin_cache)
@@ -241,6 +243,62 @@ class MonitoreoService:
         empresa = self._empresa(user, empresa_id)
         return self._riesgo(self._version(), empresa.nombre_reporte, filtros)
 
+    # ---------- Cartera: todas las empresas a la vista ----------
+    def opciones_cartera(self, user: dict, organizacion_id: int | None = None) -> OpcionesFiltro:
+        nombres = [e.nombre_reporte for e in self.empresas(user, solo_activas=True, organizacion_id=organizacion_id)]
+        minimo, maximo, estados = self.cartera_repo.opciones(nombres)
+        return OpcionesFiltro(minimo, maximo, tuple(estados))
+
+    def cartera(self, user: dict, filtros: FiltrosTransacciones, organizacion_id: int | None = None) -> dict:
+        """
+        Vista global de las empresas que el usuario puede ver (el alcance lo aplica self.empresas):
+        indicadores totales, evolución, y por empresa sus indicadores, participación y tendencia.
+        """
+        empresas = self.empresas(user, solo_activas=True, organizacion_id=organizacion_id)
+        nombres = tuple(sorted(e.nombre_reporte for e in empresas))
+        if not nombres:
+            return {"empresas": [], "global": None, "anterior": None, "serie": [], "granularidad": "Mensual"}
+        desde, hasta = filtros.desde, filtros.hasta
+        if not (desde and hasta):
+            minimo, maximo, _ = self.cartera_repo.opciones(list(nombres))
+            desde, hasta = desde or minimo, hasta or maximo
+        filtros = replace(filtros, desde=desde, hasta=hasta, texto="")
+        diario = self._diario(self._version(), nombres, filtros)
+
+        anterior_por_empresa: dict[str, metricas.KPIs] = {}
+        global_anterior = None
+        if desde and hasta:
+            pd_desde, pd_hasta = metricas.periodo_anterior(desde, hasta)
+            previo = self._diario(self._version(), nombres, replace(filtros, desde=pd_desde, hasta=pd_hasta))
+            if not previo.empty:
+                anterior_por_empresa = metricas.kpis_por_cliente(previo)
+                global_anterior = metricas.kpis_desde_totales(previo)
+
+        gran = metricas.granularidad_sugerida(desde, hasta) if desde and hasta else "Mensual"
+        global_k = metricas.kpis_desde_totales(diario) if not diario.empty else None
+        por_empresa = metricas.kpis_por_cliente(diario)
+        ultima = self.cartera_repo.ultima_operacion(list(nombres))
+        total_pagado = global_k.monto_pagado if global_k else 0.0
+        filas = []
+        for e in empresas:
+            k = por_empresa.get(e.nombre_reporte)
+            serie = (metricas.serie_desde_diario(diario[diario["cliente"] == e.nombre_reporte], gran, desde, hasta)
+                     if desde and hasta else None)
+            filas.append({
+                "empresa": e, "kpis": k, "kpis_anterior": anterior_por_empresa.get(e.nombre_reporte),
+                "participacion": (k.monto_pagado / total_pagado) if (k and total_pagado) else 0.0,
+                "ultima_operacion": ultima.get(e.nombre_reporte),
+                "tendencia": [] if serie is None else serie["monto"].round(2).tolist(),
+            })
+        filas.sort(key=lambda f: -(f["kpis"].monto_pagado if f["kpis"] else -1))
+        return {
+            "desde": desde, "hasta": hasta, "granularidad": gran,
+            "global": global_k, "anterior": global_anterior,
+            "empresas_con_movimiento": sum(1 for f in filas if f["kpis"]),
+            "serie": (metricas.serie_desde_diario(diario, gran, desde, hasta) if desde and hasta else None),
+            "empresas": filas,
+        }
+
     # ---------- Carga ----------
     def cargar_archivo(self, user: dict, ruta: Path, nombre_archivo: str, cliente: str | None = None,
                        forzar: bool = False, eliminar_faltantes: bool = False) -> ResumenSincronizacion:
@@ -340,6 +398,9 @@ class MonitoreoService:
     # ---------- Internos (sin control de acceso; no exponer) ----------
     def _consultar_sin_cache(self, version: int, cliente: str, filtros: FiltrosTransacciones) -> pd.DataFrame:
         return self.transacciones.consultar(cliente, filtros)
+
+    def _diario_sin_cache(self, version: int, nombres: tuple[str, ...], filtros: FiltrosTransacciones) -> pd.DataFrame:
+        return self.cartera_repo.diario(list(nombres), filtros)
 
     def _totales_sin_cache(self, version: int, cliente: str, filtros: FiltrosTransacciones) -> pd.DataFrame:
         return self.transacciones.totales(cliente, filtros)
