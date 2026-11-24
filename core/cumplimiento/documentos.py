@@ -100,7 +100,8 @@ def tipo_persona_beneficiario(tipo_identificacion: str | None, tipo_persona: str
 
 def nombre_carpeta_beneficiario(id_beneficiario: str, nombre: str | None) -> str:
     limpio = re.sub(r'[\\/:*?"<>|]+', " ", (nombre or "").strip())
-    return f"{id_beneficiario} - {re.sub(r'\s+', ' ', limpio).strip()}".strip(" -")
+    limpio = re.sub(r"\s+", " ", limpio).strip()
+    return f"{id_beneficiario} - {limpio}".strip(" -")
 
 
 # ---------- Lectura de OneDrive ----------
