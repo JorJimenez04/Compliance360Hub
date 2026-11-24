@@ -17,13 +17,13 @@ from sqlalchemy import Engine, text
 MIGRACIONES = pathlib.Path(__file__).resolve().parent.parent / "db" / "migrations"
 DEL_MODULO = ("027_clientes.sql", "035_monitoreo_transaccional.sql", "036_tx_sincronizacion_nube.sql",
               "037_rol_cliente.sql", "038_organizaciones.sql", "039_ficha_organizacion.sql",
-              "040_clientes_alertas.sql", "041_actividades_ciiu.sql")
+              "040_clientes_alertas.sql", "041_actividades_ciiu.sql", "042_documentacion_onedrive.sql")
 
 
 def crear_esquema_minimo(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.execute(text(
-            "DROP TABLE IF EXISTS cmp_alerta_eventos, cmp_alertas, usuario_empresas, tx_archivos_nube, tx_revisiones_nube, tx_credenciales_nube, "
+            "DROP TABLE IF EXISTS cmp_documentos, cmp_beneficiarios_expediente, cmp_alerta_eventos, cmp_alertas, usuario_empresas, tx_archivos_nube, tx_revisiones_nube, tx_credenciales_nube, "
             "tx_transacciones, tx_sincronizaciones, tx_empresas, usuarios, clientes, organizaciones CASCADE"))
         conn.execute(text("CREATE TABLE usuarios (id SERIAL PRIMARY KEY, username TEXT UNIQUE, "
                           "nombre_completo TEXT, email TEXT UNIQUE, password_hash TEXT, rol TEXT, "

@@ -390,6 +390,8 @@ class MonitoreoService:
         if getattr(resumen, "cargados", 0):
             from core.cumplimiento.alertas import evaluar_en_segundo_plano
             evaluar_en_segundo_plano(self.engine, None, user.get("username", "manual"))
+        from core.cumplimiento.documentos import revisar_todos_en_segundo_plano
+        revisar_todos_en_segundo_plano(self.engine)       # carpetas de documentación de los clientes
         registrar_auditoria(user, "CREATE", f"Monitoreo TX: sincronización manual con OneDrive · "
                                             f"{resumen.resultado} · {resumen.mensaje}"[:900])
         return resumen

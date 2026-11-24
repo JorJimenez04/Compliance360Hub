@@ -1,8 +1,10 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, Users } from "lucide-react";
-import { Aviso, Entrada, Esqueleto, Insignia, Tarjeta, TituloTarjeta, Vacio } from "@/components/ui/basicos";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Copy, FolderPlus, RefreshCw, Users, X } from "lucide-react";
+import { Aviso, Boton, Entrada, Esqueleto, Insignia, Tarjeta, TituloTarjeta, Vacio } from "@/components/ui/basicos";
+import { enviar, ErrorApi } from "@/lib/api";
+import { AsignarArchivo, Checklist, EnlaceArchivo, revisarCarpeta, type ArchivoDoc, type RequisitoDoc } from "./documentacion";
 import { useDatos } from "@/lib/useDatos";
 import { entero, fecha, fechaHora, moneda, monedaCorta, porcentaje } from "@/lib/formato";
 import { cn } from "@/lib/cn";
@@ -24,6 +26,95 @@ interface Movimiento {
 }
 
 const POR_PAGINA = 50;
+
+interface Expediente {
+  id_beneficiario: string; nombre: string | null; tipo_persona: "juridica" | "natural"; origen: "top10" | "manual" | "carpeta";
+  abierto_por: string; posicion: number | null; monto: number; participacion: number; senales: string[];
+  carpeta_nombre: string | null; carpeta_sugerida: string; requisitos: RequisitoDoc[]; completo: boolean; otros_archivos: ArchivoDoc[];
+}
+interface RespuestaExp { con_carpeta_cliente: boolean; expedientes: Expediente[]; completos: number; documentos: Record<string, string> }
+const ORIGEN = { top10: "Top 10", manual: "Agregado", carpeta: "Con carpeta" } as const;
+
+function Copiar({ texto }: { texto: string }) {
+  const [hecho, setHecho] = useState(false);
+  return (
+    <button type="button" title="Copiar nombre de la carpeta" onClick={() => { void navigator.clipboard?.writeText(texto); setHecho(true); setTimeout(() => setHecho(false), 1500); }}
+      className="inline-flex items-center gap-1 rounded border border-borde-fuerte px-1.5 py-0.5 text-[11px] text-texto-3 hover:text-texto">
+      {hecho ? <CheckCircle2 className="size-3 text-ok" /> : <Copy className="size-3" />}{hecho ? "Copiado" : "Copiar"}</button>
+  );
+}
+
+function Expedientes({ clienteId, datos, recargar }: { clienteId: number; datos: RespuestaExp; recargar: () => Promise<void> }) {
+  const [abierto, setAbierto] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<{ ok: boolean; mensaje: string } | null>(null);
+  const [revisando, setRevisando] = useState(false);
+  const cerrar = async (idb: string) => {
+    if (!window.confirm("¿Cerrar el expediente de este beneficiario? Sus archivos en OneDrive no se tocan.")) return;
+    try { await enviar(`/api/clientes/${clienteId}/expedientes-beneficiarios/${encodeURIComponent(idb)}`, {}, "DELETE"); await recargar(); }
+    catch (e) { setAviso({ ok: false, mensaje: e instanceof ErrorApi ? e.message : "No se pudo cerrar." }); }
+  };
+  const faltanCarpetas = datos.expedientes.filter((e) => !e.carpeta_nombre).length;
+  return (
+    <Tarjeta>
+      <TituloTarjeta titulo={`Expedientes documentales · ${datos.completos} de ${datos.expedientes.length} completos`}
+        descripcion="Los 10 beneficiarios más representativos por monto, más los que agregue. Sus documentos se leen de «Beneficiarios/{documento} - {nombre}» dentro de la carpeta del cliente."
+        accion={datos.con_carpeta_cliente && <Boton className="whitespace-nowrap" cargando={revisando} onClick={async () => {
+          setRevisando(true); setAviso(await revisarCarpeta(clienteId)); await recargar(); setRevisando(false);
+        }}><RefreshCw className="size-4" aria-hidden />Revisar OneDrive</Boton>} />
+      <div className="space-y-3 px-5 pb-5 pt-2">
+        {!datos.con_carpeta_cliente && <Aviso tono="alerta">Registre primero la carpeta del cliente en OneDrive (pestaña «Documentación propia»).</Aviso>}
+        {aviso && <Aviso tono={aviso.ok ? "ok" : "critico"}>{aviso.mensaje}</Aviso>}
+        {datos.con_carpeta_cliente && faltanCarpetas > 0 && (
+          <p className="text-xs text-texto-3">{faltanCarpetas} expedientes aún no tienen carpeta: créela dentro de «Beneficiarios» con el nombre indicado.</p>
+        )}
+        <table className="w-full text-[13px]">
+          <thead><tr className="text-left text-texto-3">
+            <th className="w-6 py-2" /><th className="py-2 font-medium">Beneficiario</th><th className="py-2 font-medium">Origen</th>
+            <th className="py-2 font-medium">Carpeta</th><th className="py-2 font-medium">Documentos</th><th className="w-8 py-2" /></tr></thead>
+          <tbody>
+            {datos.expedientes.map((e) => {
+              const ver = abierto === e.id_beneficiario;
+              return (
+                <Fragment key={e.id_beneficiario}>
+                  <tr className="border-t border-borde/70">
+                    <td className="py-2"><button type="button" aria-label="Ver documentos" onClick={() => setAbierto(ver ? null : e.id_beneficiario)} className="text-texto-3 hover:text-texto">
+                      {ver ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}</button></td>
+                    <td className="py-2">
+                      <p className="text-texto">{e.posicion && <span className="cifra mr-1.5 text-texto-3">#{e.posicion}</span>}{e.nombre ?? "Sin nombre"}</p>
+                      <p className="text-xs text-texto-3">{e.id_beneficiario} · {e.tipo_persona === "juridica" ? "Persona jurídica" : "Persona natural"} · {monedaCorta(e.monto)} ({porcentaje(e.participacion)})</p>
+                    </td>
+                    <td className="py-2 text-texto-2">{ORIGEN[e.origen]}</td>
+                    <td className="py-2">{e.carpeta_nombre ? <span className="text-texto-2">{e.carpeta_nombre}</span>
+                      : <span className="inline-flex flex-wrap items-center gap-1.5 text-xs"><FolderPlus className="size-3.5 text-alerta" aria-hidden />
+                          <span className="text-alerta">Crear:</span><span className="font-mono text-texto-2">{e.carpeta_sugerida}</span><Copiar texto={e.carpeta_sugerida} /></span>}</td>
+                    <td className="py-2">
+                      <div className="flex flex-wrap gap-1">
+                        {e.requisitos.map((r) => <Insignia key={r.codigo} tono={r.cargado ? "ok" : "neutro"}>{r.cargado ? "✓" : "✗"} {r.nombre}</Insignia>)}
+                      </div>
+                    </td>
+                    <td className="py-2"><button type="button" onClick={() => cerrar(e.id_beneficiario)} title="Cerrar expediente"
+                      className="text-texto-3 hover:text-critico"><X className="size-4" /></button></td>
+                  </tr>
+                  {ver && (
+                    <tr className="bg-fondo/40"><td /><td colSpan={5} className="pb-3">
+                      <Checklist requisitos={e.requisitos} documentos={datos.documentos} onHecho={recargar} />
+                      {e.otros_archivos.length > 0 && <div className="mt-2 space-y-1 text-[13px]">
+                        <p className="text-xs text-texto-3">Otros archivos en su carpeta:</p>
+                        {e.otros_archivos.map((a) => <div key={a.id} className="flex flex-wrap items-center gap-2"><EnlaceArchivo a={a} />
+                          <AsignarArchivo a={a} documentos={datos.documentos}
+                            permitidos={["documento_identidad", "certificacion_bancaria", "certificado_existencia", "rut"]} onHecho={recargar} /></div>)}
+                      </div>}
+                    </td></tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Tarjeta>
+  );
+}
 
 function Movimientos({ clienteId, idb }: { clienteId: number; idb: string }) {
   const { datos, error } = useDatos<{ movimientos: Movimiento[] }>(
@@ -60,6 +151,14 @@ function Movimientos({ clienteId, idb }: { clienteId: number; idb: string }) {
 /** A quién le paga el cliente: beneficiarios tomados de sus transacciones, con señales de revisión. */
 export default function BeneficiariosCliente({ clienteId }: { clienteId: number }) {
   const { datos, error } = useDatos<Respuesta>(`/api/clientes/${clienteId}/beneficiarios`);
+  const exp = useDatos<RespuestaExp>(`/api/clientes/${clienteId}/expedientes-beneficiarios`);
+  const conExpediente = useMemo(() => new Set((exp.datos?.expedientes ?? []).map((e) => e.id_beneficiario)), [exp.datos]);
+  const [abriendo, setAbriendo] = useState<string | null>(null);
+  const abrirExpediente = async (idb: string) => {
+    setAbriendo(idb);
+    try { await enviar(`/api/clientes/${clienteId}/expedientes-beneficiarios`, { id_beneficiario: idb }); await exp.recargar(); }
+    finally { setAbriendo(null); }
+  };
   const [buscar, setBuscar] = useState("");
   const [soloSenales, setSoloSenales] = useState(false);
   const [abierto, setAbierto] = useState<string | null>(null);
@@ -90,22 +189,25 @@ export default function BeneficiariosCliente({ clienteId }: { clienteId: number 
         <Kpi titulo="Con señales de revisión" valor={entero(conSenales)} detalle={conSenales ? "revise abajo" : "ninguna señal"} />
       </div>
 
+      {exp.datos ? <Expedientes clienteId={clienteId} datos={exp.datos} recargar={exp.recargar} /> : <Esqueleto className="h-48" />}
+
       <Tarjeta>
         <TituloTarjeta titulo="Beneficiarios del cliente" descripcion="Tomados de sus transacciones, agrupados por documento. Abra uno para ver sus movimientos. Las cuentas se muestran enmascaradas."
           accion={<div className="flex items-center gap-2">
             <button type="button" onClick={() => { setSoloSenales(!soloSenales); setPagina(1); }}
-              className={cn("rounded-md border px-2.5 py-1 text-xs", soloSenales ? "border-acento bg-acento-tenue text-texto" : "border-borde-fuerte text-texto-3")}>
+              className={cn("whitespace-nowrap rounded-md border px-2.5 py-1 text-xs", soloSenales ? "border-acento bg-acento-tenue text-texto" : "border-borde-fuerte text-texto-3")}>
               Solo con señales</button>
             <Entrada aria-label="Buscar beneficiario" placeholder="Nombre o documento…" className="w-56" value={buscar}
               onChange={(e) => { setBuscar(e.target.value); setPagina(1); }} />
           </div>} />
         <div className="overflow-x-auto px-2 pb-3 pt-3">
-          <table className="w-full min-w-[960px] text-[13px]">
+          <table className="w-full min-w-[1100px] text-[13px]">
             <thead><tr className="text-left text-texto-3">
               <th className="w-6 px-2 py-2" /><th className="px-2 py-2 font-medium">Beneficiario</th>
               <th className="px-2 py-2 text-right font-medium">Pagos</th><th className="px-2 py-2 text-right font-medium">Monto</th>
               <th className="px-2 py-2 text-right font-medium">Participación</th><th className="px-2 py-2 font-medium">Primer / último pago</th>
-              <th className="px-2 py-2 font-medium">Bancos · cuentas</th><th className="px-2 py-2 font-medium">Señales</th></tr></thead>
+              <th className="px-2 py-2 font-medium">Bancos · cuentas</th><th className="px-2 py-2 font-medium">Señales</th>
+              <th className="px-2 py-2 font-medium">Expediente</th></tr></thead>
             <tbody>
               {visibles.map((b) => {
                 const ver = abierto === b.id_beneficiario;
@@ -127,11 +229,16 @@ export default function BeneficiariosCliente({ clienteId }: { clienteId: number 
                           {b.senales.map((s) => <span key={s} title={datos.senales[s]}><Insignia tono="serio">{datos.senales[s]}</Insignia></span>)}
                         </div>
                       </td>
+                      <td className="px-2 py-2.5" onClick={(ev) => ev.stopPropagation()}>
+                        {conExpediente.has(b.id_beneficiario) ? <span className="text-xs text-ok">Abierto</span>
+                          : <button type="button" disabled={abriendo === b.id_beneficiario} onClick={() => abrirExpediente(b.id_beneficiario)}
+                              className="whitespace-nowrap text-xs text-acento hover:underline disabled:opacity-50">+ Abrir</button>}
+                      </td>
                     </tr>
                     {ver && (
                       <tr className="bg-fondo/40">
                         <td />
-                        <td colSpan={7} className="space-y-2 px-2 pb-3 pt-1">
+                        <td colSpan={8} className="space-y-2 px-2 pb-3 pt-1">
                           <p className="text-xs text-texto-3">
                             Ticket promedio {moneda(b.ticket_promedio)} · Cuentas: {b.cuentas.join(", ") || "—"}
                             {b.otros_nombres.length > 0 && <> · También reportado como: {b.otros_nombres.join(", ")}</>}

@@ -19,6 +19,7 @@ from sqlalchemy import text
 from api import seguridad as seg
 from core.cumplimiento import alertas as al
 from core.cumplimiento import beneficiarios as bf
+from core.cumplimiento import documentos as dc
 from core.cumplimiento import catalogo as cat
 from core.cumplimiento import clientes as cl
 from core.monitoreo_tx.config import ROLES_CARGA, ROLES_MONITOREO
@@ -125,6 +126,7 @@ class CambioCliente(BaseModel):
     perfil_ticket_promedio: float | None = Field(None, ge=0)
     perfil_paises: list[str] | None = Field(None, max_length=50)
     notas: str | None = Field(None, max_length=2000)
+    carpeta_onedrive: str | None = Field(None, max_length=1000)
 
 
 class NuevoCliente(CambioCliente):
@@ -201,6 +203,79 @@ def movimientos_beneficiario(cliente_id: int, id_beneficiario: str, u: seg.Usuar
     if not id_beneficiario.strip() or len(id_beneficiario) > 40:
         raise HTTPException(400, "Identificación no válida.")
     return _json({"movimientos": bf.movimientos_de(_engine(), cliente_id, id_beneficiario)})
+
+
+# =========================
+# Documentación en OneDrive (propia y de beneficiarios)
+# =========================
+@router.get("/api/clientes/{cliente_id}/documentacion")
+def documentacion(cliente_id: int, u: seg.Usuario = Depends(interno)) -> dict:
+    _cliente(cliente_id)
+    return _json(dc.estado_propio(_engine(), cliente_id))
+
+
+@router.post("/api/clientes/{cliente_id}/documentacion/revisar")
+def revisar_carpeta(cliente_id: int, request: Request, u: seg.Usuario = Depends(gestion)) -> dict:
+    """Lee ahora la carpeta del cliente en OneDrive (también ocurre tras cada sincronización)."""
+    f = _cliente(cliente_id)
+    try:
+        r = dc.revisar(_engine(), cliente_id, usuario=u.username)
+    except dc.ErrorCarpeta as e:
+        raise HTTPException(400, str(e))
+    seg.auditar(u, "READ", "clientes", f"Carpeta de OneDrive de «{f['razon_social']}» revisada: "
+                f"{r['archivos_propios']} archivos propios, {r['carpetas_beneficiarios']} carpetas de beneficiarios",
+                entidad_id=cliente_id, ip=seg.ip_cliente(request))
+    return r
+
+
+class Asignacion(BaseModel):
+    codigo: str | None = Field(None, max_length=40)
+
+
+@router.patch("/api/documentos/{documento_id}")
+def asignar_documento(documento_id: int, datos: Asignacion, request: Request, u: seg.Usuario = Depends(gestion)) -> dict:
+    try:
+        f = dc.asignar(_engine(), documento_id, datos.codigo, u.username)
+    except dc.ErrorCarpeta as e:
+        raise HTTPException(400, str(e))
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    nombre = dc.DOCUMENTOS.get(datos.codigo or "", "sin tipo")
+    seg.auditar(u, "UPDATE", "clientes", f"Archivo «{f['nombre_archivo']}» asignado como {nombre}",
+                entidad_id=f["cliente_id"], ip=seg.ip_cliente(request))
+    return {"ok": True}
+
+
+@router.get("/api/clientes/{cliente_id}/expedientes-beneficiarios")
+def expedientes_beneficiarios(cliente_id: int, u: seg.Usuario = Depends(interno)) -> dict:
+    _cliente(cliente_id)
+    return _json(dc.expedientes_beneficiarios(_engine(), cliente_id))
+
+
+class NuevoExpediente(BaseModel):
+    id_beneficiario: str = Field(min_length=1, max_length=40)
+
+
+@router.post("/api/clientes/{cliente_id}/expedientes-beneficiarios", status_code=201)
+def abrir_expediente(cliente_id: int, datos: NuevoExpediente, request: Request, u: seg.Usuario = Depends(gestion)) -> dict:
+    f = _cliente(cliente_id)
+    try:
+        dc.abrir_expediente(_engine(), cliente_id, datos.id_beneficiario.strip(), u.username)
+    except dc.ErrorCarpeta as e:
+        raise HTTPException(400, str(e))
+    seg.auditar(u, "CREATE", "clientes", f"Expediente del beneficiario {datos.id_beneficiario} abierto "
+                f"(cliente «{f['razon_social']}»)", entidad_id=cliente_id, ip=seg.ip_cliente(request))
+    return {"ok": True}
+
+
+@router.delete("/api/clientes/{cliente_id}/expedientes-beneficiarios/{id_beneficiario}")
+def cerrar_expediente(cliente_id: int, id_beneficiario: str, request: Request, u: seg.Usuario = Depends(gestion)) -> dict:
+    f = _cliente(cliente_id)
+    if not dc.cerrar_expediente(_engine(), cliente_id, id_beneficiario):
+        raise HTTPException(404, "Ese beneficiario no tiene expediente.")
+    seg.auditar(u, "UPDATE", "clientes", f"Expediente del beneficiario {id_beneficiario} cerrado "
+                f"(cliente «{f['razon_social']}»)", entidad_id=cliente_id, ip=seg.ip_cliente(request))
+    return {"ok": True}
 
 
 # =========================

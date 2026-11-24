@@ -197,7 +197,7 @@ export interface AlertaDetalle extends AlertaCaso { eventos: EventoAlerta[]; tra
 export interface FichaCliente {
   id: number; organizacion_id: number; organizacion: string; razon_social: string; nit: string | null;
   tipo_persona: "juridica" | "natural"; modelos_negocio: string[]; nivel_riesgo: string; estado: string;
-  actividades_ciiu: string[]; actividades: ActividadCiiu[];
+  actividades_ciiu: string[]; actividades: ActividadCiiu[]; carpeta_onedrive: string | null;
   sector_ciiu: string | null; pais_constitucion: string | null; sitio_web: string | null;
   proxima_revision: string | null; fecha_ultima_calificacion: string | null; notas: string | null;
   perfil_volumen_mensual: number | null; perfil_operaciones_mes: number | null; perfil_ticket_promedio: number | null;
