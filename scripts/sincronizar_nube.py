@@ -79,6 +79,8 @@ def main() -> int:
         if ev:
             print(f"Alertas de cumplimiento: {ev.nuevas} nuevas, {ev.actualizadas} actualizadas "
                   f"({ev.empresas} empresas, {ev.meses} meses evaluados)")
+    from core.cumplimiento.documentos import revisar_todos
+    revisar_todos(engine)          # carpetas de documentación de los clientes (nunca falla la sincronización)
     for x in r.archivos:
         print(f"  [{x.resultado}] {x.empresa} / {x.nombre}: {x.insertadas} nuevas, {x.actualizadas} actualizadas, "
               f"{x.rechazadas} rechazadas" + (f" · completitud: {x.completitud}" if x.completitud else "")

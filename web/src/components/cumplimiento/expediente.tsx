@@ -17,6 +17,7 @@ import VistaPaquete from "./paquete";
 import { ListaAlertas, NOMBRE_ESTADO } from "./alertas";
 import MonitoreoCliente from "./monitoreo-cliente";
 import BeneficiariosCliente from "./beneficiarios";
+import DocumentacionPropia from "./documentacion";
 
 const PESTANAS = [
   { id: "resumen", nombre: "Resumen" },
@@ -69,7 +70,7 @@ function Vista({ organizacionId, clienteId }: { organizacionId: number; clienteI
         : pestana === "beneficiarios" ? <BeneficiariosCliente clienteId={clienteId} />
         : pestana === "perfil" ? <Perfil f={f} onGuardado={ficha.recargar} />
         : pestana === "alertas" ? <ListaAlertas ruta={`/api/clientes/${clienteId}/alertas`} mostrarEmpresa={f.empresas.length > 1} />
-        : pestana === "expediente" ? <Expediente f={f} cat={cat.datos} />
+        : pestana === "expediente" ? <Expediente f={f} cat={cat.datos} onGuardado={ficha.recargar} />
         : <Bitacora clienteId={clienteId} />}
     </div>
   );
@@ -235,16 +236,21 @@ function Perfil({ f, onGuardado }: { f: FichaCliente; onGuardado: () => void }) 
 }
 
 // ---------- Expediente documental ----------
-function Expediente({ f, cat }: { f: FichaCliente; cat: Catalogo }) {
-  if (!f.modelos_negocio.length)
-    return <Aviso tono="alerta" titulo="Defina el modelo de negocio del cliente">En Resumen, elija su modelo de negocio para generar su paquete de documentos.</Aviso>;
+function Expediente({ f, cat, onGuardado }: { f: FichaCliente; cat: Catalogo; onGuardado: () => void }) {
+  const [verCatalogo, setVerCatalogo] = useState(false);
   const senales = [...new Set(cat.modelos.filter((m) => f.modelos_negocio.includes(m.codigo)).flatMap((m) => m.senales_alerta))];
   return (
-    <div className="space-y-3">
-      <p className="text-sm text-texto-3">Documentos exigidos según su modelo de negocio y nivel de riesgo. La carga de archivos a su carpeta de OneDrive llega en la próxima fase.</p>
-      <VistaPaquete modelos={cat.modelos} paquete={{ nivel: f.paquete.nivel, nivel_es_provisional: f.paquete.nivel_es_provisional,
-        tipo_persona: f.tipo_persona, modelos: f.modelos_negocio, riesgo_sugerido: f.riesgo_sugerido, monitoreo_sugerido: [],
-        regimen: null, senales_alerta: senales, documentos: f.paquete.documentos }} />
+    <div className="space-y-5">
+      <DocumentacionPropia clienteId={f.id} enlace={f.carpeta_onedrive} onGuardado={onGuardado} />
+      <div>
+        <button type="button" onClick={() => setVerCatalogo(!verCatalogo)} className="text-sm text-acento hover:underline">
+          {verCatalogo ? "Ocultar" : "Ver"} la referencia del catálogo (paquete completo según modelo de negocio y riesgo)</button>
+        {verCatalogo && (f.modelos_negocio.length
+          ? <div className="mt-3"><VistaPaquete modelos={cat.modelos} paquete={{ nivel: f.paquete.nivel, nivel_es_provisional: f.paquete.nivel_es_provisional,
+              tipo_persona: f.tipo_persona, modelos: f.modelos_negocio, riesgo_sugerido: f.riesgo_sugerido, monitoreo_sugerido: [],
+              regimen: null, senales_alerta: senales, documentos: f.paquete.documentos }} /></div>
+          : <p className="mt-2 text-sm text-texto-3">Defina el modelo de negocio en Resumen para ver el paquete de referencia.</p>)}
+      </div>
     </div>
   );
 }

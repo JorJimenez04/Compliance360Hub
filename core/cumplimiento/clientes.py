@@ -21,7 +21,7 @@ from core.monitoreo_tx.repositorio import CarteraRepo
 
 NIVELES_CLIENTE = ("Sin calificar", *cat.NIVELES)
 ESTADOS_CLIENTE = ("Prospecto", "Activo", "Suspendido", "Terminado")
-CAMPOS_EDITABLES = ("razon_social", "nit", "tipo_persona", "modelos_negocio", "nivel_riesgo", "estado",
+CAMPOS_EDITABLES = ("razon_social", "nit", "tipo_persona", "modelos_negocio", "nivel_riesgo", "estado", "carpeta_onedrive",
                     "actividades_ciiu", "sector_ciiu", "pais_constitucion", "sitio_web", "proxima_revision", "perfil_volumen_mensual",
                     "perfil_operaciones_mes", "perfil_ticket_promedio", "perfil_paises", "notas")
 
@@ -109,7 +109,7 @@ def obtener(engine: Engine, cliente_id: int) -> dict | None:
             "c.modelos_negocio, c.actividades_ciiu, c.nivel_riesgo, c.estado, c.sector_ciiu, c.pais_constitucion, c.sitio_web, "
             "c.proxima_revision, c.fecha_ultima_calificacion, c.es_pep, c.en_listas_restriccion, "
             "c.perfil_volumen_mensual, c.perfil_operaciones_mes, c.perfil_ticket_promedio, c.perfil_paises, "
-            "c.perfil_actualizado, c.notas, c.created_at "
+            "c.perfil_actualizado, c.notas, c.created_at, c.carpeta_onedrive "
             "FROM clientes c JOIN organizaciones o ON o.id = c.organizacion_id WHERE c.id = :id"),
             {"id": cliente_id}).mappings().first()
         if not f:
@@ -153,6 +153,14 @@ def _validar(cambios: dict) -> dict:
             valores["sector_ciiu"] = _texto_ciiu(v)
         if campo == "sector_ciiu" and "actividades_ciiu" in cambios:
             continue                      # lo define la actividad principal
+        if campo == "carpeta_onedrive":
+            from core.cumplimiento.documentos import ErrorCarpeta, validar_enlace
+            try:
+                v = validar_enlace(v)
+            except ErrorCarpeta as e:
+                raise ErrorCliente(str(e)) from e
+            # otra carpeta: se vuelve a resolver en la próxima revisión
+            valores.update(carpeta_drive_id=None, carpeta_item_id=None, carpeta_nombre=None, carpeta_error=None)
         if campo == "perfil_paises":
             v = sorted({p.strip() for p in (v or []) if p and p.strip()})
         if campo.startswith("perfil_") and campo != "perfil_paises" and v is not None and float(v) < 0:
