@@ -18,6 +18,7 @@ from sqlalchemy import text
 
 from api import seguridad as seg
 from core.cumplimiento import alertas as al
+from core.cumplimiento import beneficiarios as bf
 from core.cumplimiento import catalogo as cat
 from core.cumplimiento import clientes as cl
 from core.monitoreo_tx.config import ROLES_CARGA, ROLES_MONITOREO
@@ -182,6 +183,24 @@ def cambiar_cliente(cliente_id: int, datos: CambioCliente, request: Request, u: 
 def perfil(cliente_id: int, meses: int = Query(6, ge=1, le=24), u: seg.Usuario = Depends(interno)) -> dict:
     _cliente(cliente_id)
     return _json(cl.perfil_vs_real(_engine(), cliente_id, meses))
+
+
+# =========================
+# Beneficiarios (a quién le paga el cliente)
+# =========================
+@router.get("/api/clientes/{cliente_id}/beneficiarios")
+def beneficiarios(cliente_id: int, desde: date | None = None, hasta: date | None = None,
+                  u: seg.Usuario = Depends(interno)) -> dict:
+    _cliente(cliente_id)
+    return _json(bf.listar(_engine(), cliente_id, desde, hasta))
+
+
+@router.get("/api/clientes/{cliente_id}/beneficiarios/{id_beneficiario}/movimientos")
+def movimientos_beneficiario(cliente_id: int, id_beneficiario: str, u: seg.Usuario = Depends(interno)) -> dict:
+    _cliente(cliente_id)
+    if not id_beneficiario.strip() or len(id_beneficiario) > 40:
+        raise HTTPException(400, "Identificación no válida.")
+    return _json({"movimientos": bf.movimientos_de(_engine(), cliente_id, id_beneficiario)})
 
 
 # =========================

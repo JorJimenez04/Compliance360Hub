@@ -15,12 +15,16 @@ import ActividadYModelos from "./actividades";
 import { riesgoDe } from "./selector-modelos";
 import VistaPaquete from "./paquete";
 import { ListaAlertas, NOMBRE_ESTADO } from "./alertas";
+import MonitoreoCliente from "./monitoreo-cliente";
+import BeneficiariosCliente from "./beneficiarios";
 
 const PESTANAS = [
   { id: "resumen", nombre: "Resumen" },
+  { id: "monitoreo", nombre: "Monitoreo" },
   { id: "perfil", nombre: "Perfil vs. comportamiento" },
   { id: "alertas", nombre: "Alertas y casos" },
-  { id: "expediente", nombre: "Expediente documental" },
+  { id: "beneficiarios", nombre: "Beneficiarios" },
+  { id: "expediente", nombre: "Documentación propia" },
   { id: "bitacora", nombre: "Bitácora" },
 ] as const;
 
@@ -31,7 +35,7 @@ function Vista({ organizacionId, clienteId }: { organizacionId: number; clienteI
   const ficha = useDatos<FichaCliente>(`/api/clientes/${clienteId}`);
   const cat = useDatos<Catalogo>("/api/catalogo");
   const pestana = PESTANAS.find((p) => p.id === params.get("tab"))?.id ?? "resumen";
-  const ir = (t: string) => router.replace(`${ruta}?tab=${t}`, { scroll: false });
+  const ir = (t: string) => router.replace(`${ruta}?tab=${t}`, { scroll: false });   // al cambiar de pestaña se limpian los filtros
 
   if (ficha.error) return <Aviso tono="critico" icono={<AlertTriangle className="size-4" />}>{ficha.error}</Aviso>;
   if (!ficha.datos || !cat.datos) return <Esqueleto className="h-96" />;
@@ -61,6 +65,8 @@ function Vista({ organizacionId, clienteId }: { organizacionId: number; clienteI
         ))}
       </div>
       {pestana === "resumen" ? <Resumen f={f} cat={cat.datos} organizacionId={organizacionId} onGuardado={ficha.recargar} />
+        : pestana === "monitoreo" ? <MonitoreoCliente empresas={f.empresas} />
+        : pestana === "beneficiarios" ? <BeneficiariosCliente clienteId={clienteId} />
         : pestana === "perfil" ? <Perfil f={f} onGuardado={ficha.recargar} />
         : pestana === "alertas" ? <ListaAlertas ruta={`/api/clientes/${clienteId}/alertas`} mostrarEmpresa={f.empresas.length > 1} />
         : pestana === "expediente" ? <Expediente f={f} cat={cat.datos} />
@@ -118,7 +124,7 @@ function Resumen({ f, cat, organizacionId, onGuardado }: { f: FichaCliente; cat:
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-texto-3">Empresas monitoreadas:</span>
           {f.empresas.length ? f.empresas.map((e) => (
-            <Link key={e.id} href={`/monitoreo?org=${organizacionId}&empresa=${e.id}`} className="rounded-md border border-borde-fuerte px-2 py-0.5 text-texto-2 hover:border-acento hover:text-acento">{e.nombre}</Link>
+            <Link key={e.id} href={`?tab=monitoreo&empresa=${e.id}`} className="rounded-md border border-borde-fuerte px-2 py-0.5 text-texto-2 hover:border-acento hover:text-acento">{e.nombre}</Link>
           )) : <span className="text-texto-3">ninguna</span>}
         </div>
       </section>
