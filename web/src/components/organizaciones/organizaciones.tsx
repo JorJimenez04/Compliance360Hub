@@ -13,7 +13,8 @@ import { cn } from "@/lib/cn";
 
 export default function Organizaciones() {
   const { rol } = useSesion();
-  const { datos, error, recargar } = useDatos<{ organizaciones: Organizacion[] }>(rol === "super_admin" ? "/api/organizaciones" : null);
+  const esSuper = rol === "super_admin";      // solo él crea y desactiva; el resto del equipo interno consulta
+  const { datos, error, recargar } = useDatos<{ organizaciones: Organizacion[] }>("/api/organizaciones");
   const [nombre, setNombre] = useState("");
   const [nit, setNit] = useState("");
   const [creando, setCreando] = useState(false);
@@ -22,7 +23,6 @@ export default function Organizaciones() {
   const [fallo, setFallo] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
-  if (rol !== "super_admin") return <p className="text-sm text-texto-3">Su rol no tiene acceso a esta sección.</p>;
 
   async function crear(ev: React.FormEvent) {
     ev.preventDefault();
@@ -56,7 +56,7 @@ export default function Organizaciones() {
       {(error || fallo) && <Aviso tono="critico" icono={<AlertTriangle className="size-4" />}>{error ?? fallo}</Aviso>}
       {aviso && <Aviso tono="ok">{aviso}</Aviso>}
 
-      <Tarjeta>
+      {esSuper && <Tarjeta>
         <TituloTarjeta titulo="Nueva organización" />
         <form onSubmit={crear} className="grid gap-4 px-5 pb-5 pt-3 sm:grid-cols-[1fr_220px_auto] sm:items-end">
           <div>
@@ -71,11 +71,12 @@ export default function Organizaciones() {
             <Plus className="size-4" aria-hidden />Crear
           </Boton>
         </form>
-      </Tarjeta>
+      </Tarjeta>}
 
       <Tarjeta>
         <TituloTarjeta titulo="Organizaciones registradas"
-          descripcion="Abra una organización para completar su ficha: servicios, régimen, modelos de negocio, riesgo y oficial. Desactivarla cierra de inmediato la sesión de sus usuarios externos." />
+          descripcion={esSuper ? "Abra una organización para completar su ficha: servicios, régimen, modelos de negocio, riesgo y oficial. Desactivarla cierra de inmediato la sesión de sus usuarios externos."
+            : "Abra una organización para ver sus clientes, alertas y ficha."} />
         {!datos ? <div className="space-y-2 p-5">{[0, 1].map((i) => <Esqueleto key={i} className="h-12" />)}</div>
           : datos.organizaciones.length === 0 ? <Vacio icono={<Building2 className="size-8" />} titulo="No hay organizaciones" />
           : (
@@ -98,7 +99,7 @@ export default function Organizaciones() {
                       <td className="px-3 py-3">
                         <span className="inline-flex items-center gap-3">
                           <Insignia tono={o.activa ? "ok" : "neutro"}>{o.activa ? "Activa" : "Inactiva"}</Insignia>
-                          {o.activa && confirmar === o.id ? (
+                          {!esSuper ? null : o.activa && confirmar === o.id ? (
                             <>
                               <Boton variante="peligro" className="h-8" cargando={guardando === o.id} onClick={() => alternar(o)}>Sí, desactivar</Boton>
                               <Boton variante="fantasma" className="h-8" onClick={() => setConfirmar(null)}>Cancelar</Boton>

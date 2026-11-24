@@ -10,6 +10,7 @@ import { useDatos } from "@/lib/useDatos";
 import { entero, fecha, fechaHora, haceCuanto, mesCorto, moneda, monedaCorta, porcentaje } from "@/lib/formato";
 import type { Catalogo, FichaCliente, PerfilVsReal } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
+import { usePuedeGestionar } from "@/lib/sesion";
 import { Kpi } from "@/components/monitoreo/tablero";
 import ActividadYModelos from "./actividades";
 import { riesgoDe } from "./selector-modelos";
@@ -103,6 +104,7 @@ function Resumen({ f, cat, organizacionId, onGuardado }: { f: FichaCliente; cat:
   const [ed, setEd] = useState<Editable>(() => Object.fromEntries(CAMPOS.map((c) => [c, f[c]])) as unknown as Editable);
   useEffect(() => setEd(Object.fromEntries(CAMPOS.map((c) => [c, f[c]])) as unknown as Editable), [f]);
   const { guardando, fallo, ok, guardar } = useGuardar(f.id, onGuardado);
+  const puede = usePuedeGestionar();
   const k = f.operacion.kpis;
   const poner = (c: Partial<Editable>) => setEd({ ...ed, ...c });
   const r = f.alertas_resumen;
@@ -142,8 +144,8 @@ function Resumen({ f, cat, organizacionId, onGuardado }: { f: FichaCliente; cat:
 
       <Tarjeta>
         <TituloTarjeta titulo="Ficha del cliente (KYC/KYB)"
-          accion={<Boton variante="primario" cargando={guardando} onClick={() => guardar({ ...ed })}><Save className="size-4" aria-hidden />Guardar</Boton>} />
-        <div className="space-y-5 px-5 pb-5 pt-3">
+          accion={puede && <Boton variante="primario" cargando={guardando} onClick={() => guardar({ ...ed })}><Save className="size-4" aria-hidden />Guardar</Boton>} />
+        <fieldset disabled={!puede} className="space-y-5 px-5 pb-5 pt-3">
           {fallo && <Aviso tono="critico">{fallo}</Aviso>}
           {ok && <Aviso tono="ok">Ficha guardada.</Aviso>}
           <div className="grid gap-4 md:grid-cols-3">
@@ -172,7 +174,7 @@ function Resumen({ f, cat, organizacionId, onGuardado }: { f: FichaCliente; cat:
           <div><Etiqueta htmlFor="c-notas">Notas internas</Etiqueta>
             <textarea id="c-notas" rows={3} value={ed.notas ?? ""} onChange={(e) => poner({ notas: e.target.value })}
               className="w-full rounded-lg border border-borde-fuerte bg-fondo px-3 py-2 text-sm text-texto focus:border-acento focus:outline-none" /></div>
-        </div>
+        </fieldset>
       </Tarjeta>
     </div>
   );
@@ -186,6 +188,7 @@ function Perfil({ f, onGuardado }: { f: FichaCliente; onGuardado: () => void }) 
   const [tkt, setTkt] = useState(f.perfil_ticket_promedio?.toString() ?? "");
   const [paises, setPaises] = useState(f.perfil_paises.join(", "));
   const { guardando, fallo, ok, guardar } = useGuardar(f.id, () => { onGuardado(); datos.recargar(); });
+  const puede = usePuedeGestionar();
   const num = (s: string) => (s.trim() === "" ? null : Number(s));
 
   const celda = (v: number | null) => v == null ? <span className="text-texto-3">—</span>
@@ -195,9 +198,9 @@ function Perfil({ f, onGuardado }: { f: FichaCliente; onGuardado: () => void }) 
     <div className="space-y-5">
       <Tarjeta>
         <TituloTarjeta titulo="Perfil transaccional declarado" descripcion={f.perfil_actualizado ? `Actualizado el ${fecha(f.perfil_actualizado)}` : "Lo que el cliente informó al vincularse. Se compara mes a mes con lo que realmente transa."}
-          accion={<Boton variante="primario" cargando={guardando} onClick={() => guardar({ perfil_volumen_mensual: num(vol), perfil_operaciones_mes: num(ops),
+          accion={puede && <Boton variante="primario" cargando={guardando} onClick={() => guardar({ perfil_volumen_mensual: num(vol), perfil_operaciones_mes: num(ops),
             perfil_ticket_promedio: num(tkt), perfil_paises: paises.split(",").map((p) => p.trim()).filter(Boolean) })}><Save className="size-4" aria-hidden />Guardar perfil</Boton>} />
-        <div className="space-y-3 px-5 pb-5 pt-3">
+        <fieldset disabled={!puede} className="space-y-3 px-5 pb-5 pt-3">
           {fallo && <Aviso tono="critico">{fallo}</Aviso>}
           {ok && <Aviso tono="ok">Perfil guardado. Las próximas evaluaciones del monitoreo lo usan para alertar desviaciones.</Aviso>}
           <div className="grid gap-4 md:grid-cols-4">
@@ -206,7 +209,7 @@ function Perfil({ f, onGuardado }: { f: FichaCliente; onGuardado: () => void }) 
             <div><Etiqueta htmlFor="p-tkt">Ticket promedio (COP)</Etiqueta><Entrada id="p-tkt" type="number" min={0} value={tkt} onChange={(e) => setTkt(e.target.value)} /></div>
             <div><Etiqueta htmlFor="p-pais">Países (separados por coma)</Etiqueta><Entrada id="p-pais" value={paises} onChange={(e) => setPaises(e.target.value)} /></div>
           </div>
-        </div>
+        </fieldset>
       </Tarjeta>
       <Tarjeta>
         <TituloTarjeta titulo="Comportamiento real frente al declarado" descripcion="Veces el valor declarado. Más de 1,5× genera una alerta de desviación de perfil." />

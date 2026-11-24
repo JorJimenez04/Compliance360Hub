@@ -10,7 +10,7 @@ import { ROLES_EXTERNOS, type Perfil } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
 
 const ROLES: Record<string, string> = {
-  super_admin: "Superadministrador", admin: "Administrador", compliance: "Cumplimiento",
+  super_admin: "Superadministrador", admin: "Administrador", compliance: "Cumplimiento", director_cumplimiento: "Director de cumplimiento",
   comercial: "Comercial", auditor: "Auditor", consulta: "Consulta", cliente: "Cliente", junta: "Junta directiva",
 };
 
@@ -106,7 +106,7 @@ export default function Marco({ children }: { children: React.ReactNode }) {
             </div>
           );
         })}
-        {APP_CLASICA && !ROLES_EXTERNOS.includes(perfil.rol) && (
+        {APP_CLASICA && !ROLES_EXTERNOS.includes(perfil.rol) && perfil.rol !== "director_cumplimiento" && (
           <div>
             <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-texto-3">Otros módulos</p>
             <a href={APP_CLASICA} target="_blank" rel="noopener"

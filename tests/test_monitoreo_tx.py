@@ -243,8 +243,9 @@ def test_roles_sin_acceso_no_consultan(rol):
 
 def test_menu_y_modulo_usan_los_mismos_roles():
     from core.monitoreo_tx.config import ROLES_CARGA, ROLES_MONITOREO
-    assert ROLES_MONITOREO == {"super_admin", "admin", "compliance"}
+    assert ROLES_MONITOREO == {"super_admin", "admin", "compliance", "director_cumplimiento"}
     assert ROLES_CARGA <= ROLES_MONITOREO
+    assert "director_cumplimiento" not in ROLES_CARGA        # el director solo consulta
 
 
 # ---------- Sincronización contra PostgreSQL ----------

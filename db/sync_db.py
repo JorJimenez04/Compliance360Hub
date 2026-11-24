@@ -76,6 +76,7 @@ ALL_MIGRATIONS: list[str] = [
     "040_clientes_alertas.sql",
     "041_actividades_ciiu.sql",
     "042_documentacion_onedrive.sql",
+    "043_rol_director_cumplimiento.sql",
 ]
 
 # Tablas / columnas a validar tras las migraciones

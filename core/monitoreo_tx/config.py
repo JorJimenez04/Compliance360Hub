@@ -23,9 +23,12 @@ ESTADO_SIN_DATO = "Sin estado"
 # Carpeta donde la sincronización deja el CSV de filas rechazadas (ignorada por git)
 SYNC_LOG_DIR = Path(os.getenv("TX_SYNC_LOG_DIR", BASE_DIR / "data" / "logs"))
 
+# Director de cumplimiento del grupo: interno, ve todas las organizaciones en SOLO LECTURA
+# (está en ROLES_MONITOREO, nunca en ROLES_CARGA).
+ROL_DIRECTOR = "director_cumplimiento"
 # Roles que entran al módulo. Es información transaccional de terceros con
 # datos personales de beneficiarios: solo cumplimiento y administración.
-ROLES_MONITOREO = frozenset({"super_admin", "admin", "compliance"})
+ROLES_MONITOREO = frozenset({"super_admin", "admin", "compliance", ROL_DIRECTOR})
 # Roles que pueden cargar archivos y enlazar empresas con clientes
 ROLES_CARGA = frozenset({"super_admin", "admin", "compliance"})
 

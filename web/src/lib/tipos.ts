@@ -9,13 +9,15 @@ export interface Perfil {
 }
 
 export const ROLES_EXTERNOS = ["cliente", "junta"];
+/** Roles internos que pueden modificar (el director de cumplimiento solo consulta). */
+export const ROLES_GESTION = ["super_admin", "admin", "compliance"];
 
 export interface Organizacion {
   id: number; nombre: string; nit?: string | null; activa?: boolean; notas?: string | null;
   empresas?: number; clientes?: number; usuarios?: number; creada?: string | null;
 }
 
-export type PerfilGestionado = "cliente" | "junta" | "compliance";
+export type PerfilGestionado = "cliente" | "junta" | "compliance" | "director_cumplimiento";
 export type Alcance = "organizacion" | "empresas";
 
 export interface UsuarioGestionado {

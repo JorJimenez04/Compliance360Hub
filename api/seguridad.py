@@ -276,7 +276,7 @@ def requiere_roles(roles: frozenset[str] | set[str]):
 
 # Módulos que el frontend puede mostrar según el rol (menú lateral)
 def modulos_visibles(rol: str) -> list[str]:
-    from core.monitoreo_tx.config import ROLES_CONSULTA
+    from core.monitoreo_tx.config import ROLES_CONSULTA, ROLES_MONITOREO
     mods = []
     if rol == "junta":
         mods.append("junta")
@@ -286,6 +286,8 @@ def modulos_visibles(rol: str) -> list[str]:
         mods.append("auditoria")
     if rol in ROLES_CONSULTA and rol not in ROLES_EXTERNOS:
         mods.append("catalogo")
+    if rol in ROLES_MONITOREO:
+        mods.append("organizaciones")      # el equipo interno consulta organizaciones y clientes
     if rol == "super_admin":
-        mods += ["organizaciones", "usuarios"]
+        mods.append("usuarios")
     return mods
