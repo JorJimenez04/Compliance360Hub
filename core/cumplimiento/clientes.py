@@ -107,7 +107,7 @@ def obtener(engine: Engine, cliente_id: int) -> dict | None:
         f = conn.execute(text(
             "SELECT c.id, c.organizacion_id, o.nombre AS organizacion, c.razon_social, c.nit, c.tipo_persona, "
             "c.modelos_negocio, c.actividades_ciiu, c.nivel_riesgo, c.estado, c.sector_ciiu, c.pais_constitucion, c.sitio_web, "
-            "c.proxima_revision, c.fecha_ultima_calificacion, c.es_pep, c.en_listas_restriccion, "
+            "c.proxima_revision, c.fecha_ultima_calificacion, c.es_pep, c.en_listas_restriccion, c.puntaje_riesgo, "
             "c.perfil_volumen_mensual, c.perfil_operaciones_mes, c.perfil_ticket_promedio, c.perfil_paises, "
             "c.perfil_actualizado, c.notas, c.created_at, c.carpeta_onedrive "
             "FROM clientes c JOIN organizaciones o ON o.id = c.organizacion_id WHERE c.id = :id"),
@@ -171,35 +171,47 @@ def _validar(cambios: dict) -> dict:
 
 def crear(engine: Engine, organizacion_id: int, datos: dict, usuario: str) -> int:
     """Cliente creado a mano (p. ej. un prospecto que aún no transa). Devuelve su id."""
+    from core.cumplimiento.vinculados import registrar_calificacion
     valores = _validar({"estado": "Prospecto", "tipo_persona": cat.PJ, **datos})
     if not valores.get("razon_social"):
         raise ErrorCliente("La razón social es obligatoria.")
-    if valores.get("nivel_riesgo") in cat.NIVELES:
-        valores["fecha_ultima_calificacion"] = date.today()
+    nivel = valores.pop("nivel_riesgo", None)
     if any(k.startswith("perfil_") for k in valores):
         valores["perfil_actualizado"] = date.today()
     columnas = list(valores)                # claves de una lista fija, no de la petición
     with engine.begin() as conn:
-        return conn.execute(text(
+        cid = conn.execute(text(
             f"INSERT INTO clientes ({', '.join(columnas)}, organizacion_id, creado_por) "
             f"VALUES ({', '.join(':' + c for c in columnas)}, :organizacion_id, :creado_por) RETURNING id"),
             {**valores, "organizacion_id": organizacion_id, "creado_por": usuario}).scalar_one()
+        if nivel in cat.NIVELES:            # la calificación inicial también queda en el historial
+            registrar_calificacion(conn, cid, nivel_nuevo=nivel, puntaje_nuevo=None, motivo="Calificación inicial al crear el cliente",
+                                   observaciones=None, usuario=usuario)
+    return cid
 
 
-def actualizar(engine: Engine, cliente_id: int, cambios: dict) -> dict:
+def actualizar(engine: Engine, cliente_id: int, cambios: dict, usuario: str = "sistema") -> dict:
+    from core.cumplimiento.vinculados import registrar_calificacion
     valores = _validar(cambios)
-    if not valores:
+    nivel = valores.pop("nivel_riesgo", None)
+    if not valores and nivel is None:
         return obtener(engine, cliente_id)
     if any(k.startswith("perfil_") for k in valores):
         valores["perfil_actualizado"] = date.today()
-    if "nivel_riesgo" in valores:
-        valores["fecha_ultima_calificacion"] = date.today()
-    sets = ", ".join(f"{k} = :{k}" for k in valores)     # claves de una lista fija, no de la petición
     with engine.begin() as conn:
-        hecho = conn.execute(text(f"UPDATE clientes SET {sets}, updated_at = CURRENT_TIMESTAMP WHERE id = :id"),
-                             {**valores, "id": cliente_id}).rowcount
-    if not hecho:
-        raise LookupError("El cliente no existe.")
+        actual = conn.scalar(text("SELECT nivel_riesgo FROM clientes WHERE id = :id"), {"id": cliente_id})
+        if actual is None:
+            raise LookupError("El cliente no existe.")
+        if valores:
+            sets = ", ".join(f"{k} = :{k}" for k in valores)     # claves de una lista fija, no de la petición
+            conn.execute(text(f"UPDATE clientes SET {sets}, updated_at = CURRENT_TIMESTAMP WHERE id = :id"),
+                         {**valores, "id": cliente_id})
+        if nivel is not None and nivel != actual:
+            if nivel in cat.NIVELES:        # todo cambio de nivel queda en el historial de riesgo
+                registrar_calificacion(conn, cliente_id, nivel_nuevo=nivel, puntaje_nuevo=None,
+                                       motivo="Cambio desde la ficha del cliente", observaciones=None, usuario=usuario)
+            else:
+                conn.execute(text("UPDATE clientes SET nivel_riesgo = :n WHERE id = :id"), {"n": nivel, "id": cliente_id})
     return obtener(engine, cliente_id)
 
 

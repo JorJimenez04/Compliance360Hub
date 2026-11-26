@@ -282,7 +282,7 @@ def modulos_visibles(rol: str) -> list[str]:
         mods.append("junta")
     if rol in ROLES_CONSULTA:
         mods.append("monitoreo")
-    if rol in Roles.CAN_VIEW_AUDIT:
+    if rol in Roles.CAN_VIEW_AUDIT or rol in ROLES_MONITOREO:
         mods.append("auditoria")
     if rol in ROLES_CONSULTA and rol not in ROLES_EXTERNOS:
         mods.append("catalogo")

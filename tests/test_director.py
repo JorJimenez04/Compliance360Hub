@@ -97,3 +97,14 @@ def test_la_base_acepta_el_rol_y_lo_exige_sin_organizacion():
         c.execute(text("INSERT INTO usuarios (username, nombre_completo, rol, password_hash, activo, organizacion_id) "
                        "SELECT 'dir2', 'Director', 'director_cumplimiento', 'x', 1, id FROM organizaciones LIMIT 1"))
     engine.dispose()
+
+
+def test_auditoria_para_el_equipo_interno():
+    from api.rutas import auditoria
+    dep = auditoria.router.routes[0].dependant.dependencies[-1].call
+    assert dep(DIRECTOR) is DIRECTOR
+    for rol in ("cliente", "junta"):
+        with pytest.raises(HTTPException):
+            dep(seg.Usuario(9, "x", "X", rol, organizacion_id=1, alcance="organizacion" if rol == "cliente" else None))
+    assert "auditoria" in seg.modulos_visibles(ROL_DIRECTOR)
+    assert all(m != "POST" for r in auditoria.router.routes for m in r.methods)   # el log no se modifica

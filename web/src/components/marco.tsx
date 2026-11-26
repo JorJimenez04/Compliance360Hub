@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, BookOpenCheck, Building2, ExternalLink, LayoutDashboard, Users, Loader2, LogOut, Menu, X } from "lucide-react";
+import { Activity, BookOpenCheck, Building2, ExternalLink, LayoutDashboard, ScrollText, Users, Loader2, LogOut, Menu, X } from "lucide-react";
 import { api, enviar, ErrorApi } from "@/lib/api";
 import { ContextoSesion } from "@/lib/sesion";
 import { ROLES_EXTERNOS, type Perfil } from "@/lib/tipos";
@@ -22,6 +22,7 @@ const SECCIONES = [
     { modulo: "organizaciones", nombre: "Organizaciones", href: "/organizaciones", icono: Building2 },
     { modulo: "catalogo", nombre: "Catálogo de cumplimiento", href: "/catalogo", icono: BookOpenCheck },
     { modulo: "usuarios", nombre: "Usuarios", href: "/usuarios", icono: Users },
+    { modulo: "auditoria", nombre: "Auditoría", href: "/auditoria", icono: ScrollText },
   ] },
 ] as const;
 
