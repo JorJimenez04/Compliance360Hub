@@ -9,6 +9,7 @@ import { fechaHora } from "@/lib/formato";
 import { Aviso, Boton, Entrada, Esqueleto, Etiqueta, Insignia, Selector, Tarjeta, TituloTarjeta, Vacio } from "@/components/ui/basicos";
 import type { Alcance, Organizacion, PerfilGestionado, UsuarioGestionado } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
+import { CampoClave, claveValida, SelectorModoClave, type ModoClave } from "./clave";
 
 const PERFILES: Record<PerfilGestionado, { nombre: string; descripcion: string }> = {
   cliente: { nombre: "Cliente", descripcion: "Equipo de la organización. Solo lectura: monitoreo y estado de su cumplimiento." },
@@ -17,7 +18,7 @@ const PERFILES: Record<PerfilGestionado, { nombre: string; descripcion: string }
   director_cumplimiento: { nombre: "Director de cumplimiento", descripcion: "Responsable del compliance del grupo. Ve todas las organizaciones en solo lectura; no pertenece a ninguna." },
 };
 
-interface Resultado { username: string; clave_temporal: string; titulo: string }
+interface Resultado { username: string; clave_temporal: string | null; titulo: string }
 
 const VACIO = { username: "", nombre: "", email: "", rol: "cliente" as PerfilGestionado, organizacion_id: "", alcance: "organizacion" as Alcance, empresas: [] as number[] };
 
@@ -33,6 +34,14 @@ export default function Usuarios() {
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [copiado, setCopiado] = useState(false);
+  const [modoClave, setModoClave] = useState<ModoClave>("generar");
+  const [clave, setClave] = useState("");
+  const [clave2, setClave2] = useState("");
+  // «Nueva clave» de un usuario existente: ventana con la misma elección (generar o escribir)
+  const [cambiar, setCambiar] = useState<UsuarioGestionado | null>(null);
+  const [modoCambio, setModoCambio] = useState<ModoClave>("generar");
+  const [claveCambio, setClaveCambio] = useState("");
+  const [claveCambio2, setClaveCambio2] = useState("");
 
   const activas = useMemo(() => (orgs.datos?.organizaciones ?? []).filter((o) => o.activa), [orgs.datos]);
 
@@ -40,7 +49,7 @@ export default function Usuarios() {
 
   const externo = form.rol === "cliente" || form.rol === "junta";
   const listo = form.username.trim().length >= 3 && form.nombre.trim().length >= 2 && form.email.includes("@")
-    && (!externo || form.organizacion_id);
+    && (!externo || form.organizacion_id) && (modoClave === "generar" || claveValida(clave, clave2));
 
   async function crear(ev: React.FormEvent) {
     ev.preventDefault();
@@ -51,10 +60,11 @@ export default function Usuarios() {
         organizacion_id: externo ? Number(form.organizacion_id) : null,
         alcance: form.rol === "cliente" ? form.alcance : null,
         empresas: [],
+        clave: modoClave === "escribir" ? clave : null,
       };
-      const r = await enviar<{ username: string; clave_temporal: string }>("/api/usuarios", cuerpo);
+      const r = await enviar<{ username: string; clave_temporal: string | null }>("/api/usuarios", cuerpo);
       setResultado({ ...r, titulo: `Usuario «${r.username}» creado` });
-      setForm(VACIO);
+      setForm(VACIO); setClave(""); setClave2(""); setModoClave("generar");
       await usuarios.recargar();
     } catch (e) {
       setError(e instanceof ErrorApi ? e.message : "No se pudo crear el usuario.");
@@ -64,9 +74,10 @@ export default function Usuarios() {
   async function restablecer(id: number) {
     setTrabajando(id); setError(null); setCopiado(false);
     try {
-      const r = await enviar<{ username: string; clave_temporal: string }>(`/api/usuarios/${id}/restablecer-clave`);
-      setResultado({ ...r, titulo: `Nueva clave de «${r.username}»` });
-      setConfirmar(null);
+      const r = await enviar<{ username: string; clave_temporal: string | null }>(`/api/usuarios/${id}/restablecer-clave`,
+        { clave: modoCambio === "escribir" ? claveCambio : null });
+      setResultado({ ...r, titulo: r.clave_temporal ? `Nueva clave de «${r.username}»` : `Clave asignada a «${r.username}»` });
+      setConfirmar(null); setCambiar(null); setClaveCambio(""); setClaveCambio2("");
       await usuarios.recargar();
     } catch (e) {
       setError(e instanceof ErrorApi ? e.message : "No se pudo restablecer la clave.");
@@ -83,7 +94,8 @@ export default function Usuarios() {
   async function copiar() {
     if (!resultado) return;
     try {
-      await navigator.clipboard.writeText(`Usuario: ${resultado.username}\nClave: ${resultado.clave_temporal}`);
+      await navigator.clipboard.writeText(resultado.clave_temporal
+        ? `Usuario: ${resultado.username}\nClave: ${resultado.clave_temporal}` : resultado.username);
       setCopiado(true);
     } catch { /* se puede seleccionar y copiar a mano */ }
   }
@@ -110,21 +122,47 @@ export default function Usuarios() {
               <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-acento-tenue text-acento"><KeyRound className="size-5" aria-hidden /></span>
               <div>
                 <h2 id="titulo-clave" className="text-lg font-semibold">{resultado.titulo}</h2>
-                <p className="mt-1 text-sm text-texto-3">Esta clave se muestra <strong className="text-texto">una sola vez</strong>. Cópiela ahora y entréguela por mensajería, no dictada.</p>
+                <p className="mt-1 text-sm text-texto-3">{resultado.clave_temporal
+                  ? <>Esta clave se muestra <strong className="text-texto">una sola vez</strong>. Cópiela ahora y entréguela por mensajería, no dictada.</>
+                  : <>Quedó con la clave que usted escribió. Entréguele su usuario y esa clave por mensajería, no dictada.</>}</p>
               </div>
             </div>
             <div className="mt-5 space-y-1.5 rounded-xl border border-borde-fuerte bg-fondo p-4">
               <p className="text-xs text-texto-3">Usuario</p>
               <p className="select-all font-mono text-base">{resultado.username}</p>
-              <p className="pt-2 text-xs text-texto-3">Clave temporal</p>
-              <p className="select-all break-all font-mono text-2xl tracking-widest text-acento">{resultado.clave_temporal}</p>
+              {resultado.clave_temporal && <>
+                <p className="pt-2 text-xs text-texto-3">Clave temporal</p>
+                <p className="select-all break-all font-mono text-2xl tracking-widest text-acento">{resultado.clave_temporal}</p>
+              </>}
             </div>
             <p className="mt-3 text-xs text-texto-3">El usuario no distingue mayúsculas. Si genera otra clave, esta deja de funcionar.</p>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <Boton variante="primario" onClick={copiar}>
-                {copiado ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}{copiado ? "Copiada" : "Copiar usuario y clave"}</Boton>
-              <Boton onClick={() => { if (copiado || window.confirm("¿Cerrar sin copiar? La clave no se podrá volver a ver.")) setResultado(null); }}>
+                {copiado ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}{copiado ? "Copiado" : resultado.clave_temporal ? "Copiar usuario y clave" : "Copiar usuario"}</Boton>
+              <Boton onClick={() => { if (copiado || !resultado.clave_temporal || window.confirm("¿Cerrar sin copiar? La clave no se podrá volver a ver.")) setResultado(null); }}>
                 Listo, ya la entregué</Boton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cambiar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog"
+          aria-modal="true" aria-labelledby="titulo-cambio">
+          <div className="w-full max-w-xl space-y-4 rounded-2xl border border-borde-fuerte bg-panel p-6 shadow-2xl">
+            <div>
+              <h2 id="titulo-cambio" className="text-lg font-semibold">Nueva clave para «{cambiar.username}»</h2>
+              <p className="mt-1 text-sm text-texto-3">La clave actual deja de funcionar en cuanto confirme.</p>
+            </div>
+            <SelectorModoClave modo={modoCambio} onModo={setModoCambio} />
+            {modoCambio === "escribir" && <CampoClave idBase="cambio" clave={claveCambio} confirmacion={claveCambio2}
+              onClave={setClaveCambio} onConfirmacion={setClaveCambio2} />}
+            {error && <Aviso tono="critico">{error}</Aviso>}
+            <div className="flex justify-end gap-2">
+              <Boton variante="fantasma" onClick={() => { setCambiar(null); setError(null); }}>Cancelar</Boton>
+              <Boton variante="primario" cargando={trabajando === cambiar.id}
+                disabled={modoCambio === "escribir" && !claveValida(claveCambio, claveCambio2)} onClick={() => restablecer(cambiar.id)}>
+                <KeyRound className="size-4" aria-hidden />{modoCambio === "generar" ? "Generar clave" : "Asignar clave"}</Boton>
             </div>
           </div>
         </div>
@@ -171,6 +209,12 @@ export default function Usuarios() {
             </div>
           )}
 
+          <div className="space-y-3">
+            <Etiqueta>Clave de acceso</Etiqueta>
+            <SelectorModoClave modo={modoClave} onModo={setModoClave} />
+            {modoClave === "escribir" && <CampoClave idBase="nueva" clave={clave} confirmacion={clave2} onClave={setClave} onConfirmacion={setClave2} />}
+          </div>
+
           <Boton type="submit" variante="primario" cargando={creando} disabled={!listo}>
             <UserPlus className="size-4" aria-hidden />Crear usuario
           </Boton>
@@ -199,17 +243,11 @@ export default function Usuarios() {
                       <td className="pr-4 text-texto-3">{u.ultimo_acceso ? fechaHora(u.ultimo_acceso) : "Nunca"}</td>
                       <td className="pr-4"><Insignia tono={u.activo ? "ok" : "neutro"}>{u.activo ? "Activo" : "Inactivo"}</Insignia></td>
                       <td className="whitespace-nowrap text-right">
-                        {confirmar === u.id ? (
-                          <span className="inline-flex gap-2">
-                            <Boton variante="peligro" cargando={trabajando === u.id} onClick={() => restablecer(u.id)}>Sí, nueva clave</Boton>
-                            <Boton variante="fantasma" onClick={() => setConfirmar(null)}>Cancelar</Boton>
-                          </span>
-                        ) : (
-                          <span className="inline-flex gap-2">
-                            <Boton onClick={() => { setConfirmar(u.id); setResultado(null); }}><KeyRound className="size-4" aria-hidden />Nueva clave</Boton>
-                            <Boton variante="fantasma" disabled={trabajando === u.id} onClick={() => alternar(u)}>{u.activo ? "Desactivar" : "Activar"}</Boton>
-                          </span>
-                        )}
+                        <span className="inline-flex gap-2">
+                          <Boton onClick={() => { setCambiar(u); setModoCambio("generar"); setClaveCambio(""); setClaveCambio2(""); setResultado(null); setError(null); }}>
+                            <KeyRound className="size-4" aria-hidden />Nueva clave</Boton>
+                          <Boton variante="fantasma" disabled={trabajando === u.id} onClick={() => alternar(u)}>{u.activo ? "Desactivar" : "Activar"}</Boton>
+                        </span>
                       </td>
                     </tr>
                   ))}

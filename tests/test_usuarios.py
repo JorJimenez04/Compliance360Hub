@@ -364,3 +364,41 @@ def test_los_usuarios_nuevos_se_guardan_en_minusculas_y_no_se_duplican(pg):
         ru.crear(ru.NuevoUsuario(username="MARIA.LOPEZ", nombre="Otra", email="otra@x.co", rol="compliance"), _Peticion(), jefe)
     assert e.value.status_code == 409
     assert seg.autenticar("Maria.Lopez", r["clave_temporal"]).username == "maria.lopez"
+
+
+# ---------- Clave escrita a mano por el super_admin ----------
+CLAVE_MANUAL = "Adamo2026Segura"
+
+
+def test_crear_con_clave_escrita_no_la_devuelve_ni_la_audita(pg):
+    engine, registros = pg
+    jefe = seg.Usuario(1, "jefe", "Jefe", "super_admin")
+    r = ru.crear(ru.NuevoUsuario(username="laura", nombre="Laura", email="laura@x.co", rol="compliance",
+                                 clave=CLAVE_MANUAL), _Peticion(), jefe)
+    assert r["clave_temporal"] is None
+    assert seg.autenticar("laura", CLAVE_MANUAL).username == "laura"
+    assert CLAVE_MANUAL not in str(registros) and "asignada a mano" in str(registros)
+
+
+@pytest.mark.parametrize("debil", ["Corta1A", "todominuscula123", "TODOMAYUSCULA123", "SinNumerosNiNada",
+                                   " Adamo2026Segura", "Adamo2026Segura "])
+def test_una_clave_debil_se_rechaza(pg, debil):
+    jefe = seg.Usuario(1, "jefe", "Jefe", "super_admin")
+    with pytest.raises(HTTPException) as e:
+        ru.crear(ru.NuevoUsuario(username="pedro", nombre="Pedro", email="pedro@x.co", rol="compliance",
+                                 clave=debil), _Peticion(), jefe)
+    assert e.value.status_code == 400
+
+
+def test_restablecer_con_clave_escrita(pg):
+    engine, registros = pg
+    jefe = seg.Usuario(1, "jefe", "Jefe", "super_admin")
+    _con_clave(engine, "diego", "Vieja1ClaveLarga")
+    r = ru.restablecer(_id(engine, "diego"), _Peticion(), jefe, ru.ClaveManual(clave=CLAVE_MANUAL))
+    assert r["clave_temporal"] is None
+    assert seg.autenticar("diego", CLAVE_MANUAL) is not None
+    assert seg.autenticar("diego", "Vieja1ClaveLarga") is None
+    assert CLAVE_MANUAL not in str(registros)
+    # sin cuerpo sigue generando una al azar
+    g = ru.restablecer(_id(engine, "diego"), _Peticion(), jefe)
+    assert len(g["clave_temporal"]) == 16 and seg.autenticar("diego", g["clave_temporal"]) is not None

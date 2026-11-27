@@ -22,7 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from api import seguridad as seg
-from api.claves import clave_temporal, hash_clave
+from api.claves import clave_temporal, hash_clave, validar_clave
 from core.monitoreo_tx.config import ALCANCE_EMPRESAS, ALCANCE_ORGANIZACION
 
 router = APIRouter(prefix="/api/usuarios", tags=["usuarios"])
@@ -78,6 +78,21 @@ class NuevoUsuario(BaseModel):
     organizacion_id: int | None = None
     alcance: str | None = None
     empresas: list[int] = Field(default_factory=list, max_length=200)
+    # Opcional: la clave la escribe el super_admin. Si no viene, se genera una al azar.
+    clave: str | None = Field(None, max_length=128)
+
+
+class ClaveManual(BaseModel):
+    clave: str | None = Field(None, max_length=128)
+
+
+def _clave_elegida(escrita: str | None) -> tuple[str, bool]:
+    """(clave, generada). Valida la escrita a mano; si no hay, genera una."""
+    if escrita is None or escrita == "":
+        return clave_temporal(), True
+    if (motivo := validar_clave(escrita)):
+        raise HTTPException(400, motivo)
+    return escrita, False
 
 
 def _validar_empresas(conn, organizacion_id: int, empresas: list[int]) -> None:
@@ -122,7 +137,7 @@ def crear(datos: NuevoUsuario, request: Request, u: seg.Usuario = Depends(solo_s
     if not _EMAIL.match(email):
         raise HTTPException(400, "Correo no válido.")
     _reglas_de_perfil(datos.rol, datos.organizacion_id, datos.alcance, datos.empresas)
-    clave = clave_temporal()
+    clave, generada = _clave_elegida(datos.clave)
     try:
         with engine.begin() as conn:
             if conn.scalar(text("SELECT 1 FROM usuarios WHERE lower(username) = :u"), {"u": username}):
@@ -146,11 +161,13 @@ def crear(datos: NuevoUsuario, request: Request, u: seg.Usuario = Depends(solo_s
     except IntegrityError:
         raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un usuario con ese nombre de usuario o correo.")
     seg.auditar(u, "CREATE", "usuarios",
-                f"Usuario «{username}» ({datos.rol}) creado por {u.username}", entidad_id=nuevo,
+                f"Usuario «{username}» ({datos.rol}) creado por {u.username} "
+                f"({'clave generada' if generada else 'clave asignada a mano'})", entidad_id=nuevo,
                 ip=seg.ip_cliente(request),
                 valores_nuevos={"rol": datos.rol, "organizacion_id": datos.organizacion_id,
                                 "alcance": datos.alcance, "empresas": sorted(set(datos.empresas))})
-    return {"id": nuevo, "username": username, "clave_temporal": clave}
+    # Una clave escrita por el super_admin no se devuelve: él ya la conoce
+    return {"id": nuevo, "username": username, "clave_temporal": clave if generada else None}
 
 
 class CambioUsuario(BaseModel):
@@ -224,18 +241,19 @@ def cambiar(usuario_id: int, datos: CambioUsuario, request: Request,
 
 
 @router.post("/{usuario_id}/restablecer-clave")
-def restablecer(usuario_id: int, request: Request, u: seg.Usuario = Depends(solo_super_admin)) -> dict:
+def restablecer(usuario_id: int, request: Request, u: seg.Usuario = Depends(solo_super_admin),
+                datos: ClaveManual | None = None) -> dict:
     from db.database import engine
-    nueva = clave_temporal()
+    nueva, generada = _clave_elegida(datos.clave if datos else None)
     with engine.begin() as conn:
         # Solo perfiles gestionados aquí: un super_admin u otro rol interno no se toca desde esta pantalla
         fila = _gestionado(conn, usuario_id)
         conn.execute(text("UPDATE usuarios SET password_hash = :h, activo = 1, updated_at = CURRENT_TIMESTAMP "
                           "WHERE id = :id"), {"h": hash_clave(nueva), "id": usuario_id})
     seg.auditar(u, "UPDATE", "usuarios",
-                f"Clave de «{fila['username']}» ({fila['rol']}) restablecida por {u.username}",
+                f"Clave de «{fila['username']}» ({fila['rol']}) {'generada' if generada else 'asignada a mano'} por {u.username}",
                 entidad_id=usuario_id, ip=seg.ip_cliente(request))
-    return {"username": fila["username"], "clave_temporal": nueva}
+    return {"username": fila["username"], "clave_temporal": nueva if generada else None}
 
 
 # Ruta anterior (pantalla vieja): misma regla, solo clientes
