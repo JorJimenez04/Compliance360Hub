@@ -19,13 +19,14 @@ DEL_MODULO = ("027_clientes.sql", "028_cliente_personas.sql", "029_cliente_contr
               "031_cliente_documentos.sql", "032_cliente_historial_riesgo.sql", "035_monitoreo_transaccional.sql", "036_tx_sincronizacion_nube.sql",
               "037_rol_cliente.sql", "038_organizaciones.sql", "039_ficha_organizacion.sql",
               "040_clientes_alertas.sql", "041_actividades_ciiu.sql", "042_documentacion_onedrive.sql", "043_rol_director_cumplimiento.sql",
-              "044_eliminar_perfiles_anteriores.sql")
+              "044_eliminar_perfiles_anteriores.sql",
+              "045_aliados_bancarios.sql")
 
 
 def crear_esquema_minimo(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.execute(text(
-            "DROP TABLE IF EXISTS cliente_historial_riesgo, cliente_documentos, contrato_servicios, cliente_contratos, cliente_personas, cmp_documentos, cmp_beneficiarios_expediente, cmp_alerta_eventos, cmp_alertas, usuario_empresas, tx_archivos_nube, tx_revisiones_nube, tx_credenciales_nube, "
+            "DROP TABLE IF EXISTS org_aliados_historial, org_aliados, aliados_bancarios, cliente_historial_riesgo, cliente_documentos, contrato_servicios, cliente_contratos, cliente_personas, cmp_documentos, cmp_beneficiarios_expediente, cmp_alerta_eventos, cmp_alertas, usuario_empresas, tx_archivos_nube, tx_revisiones_nube, tx_credenciales_nube, "
             "tx_transacciones, tx_sincronizaciones, tx_empresas, usuarios, clientes, organizaciones CASCADE"))
         conn.execute(text("CREATE TABLE usuarios (id SERIAL PRIMARY KEY, username TEXT UNIQUE, "
                           "nombre_completo TEXT, email TEXT UNIQUE, password_hash TEXT, rol TEXT, "
