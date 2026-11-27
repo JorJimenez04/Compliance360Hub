@@ -323,3 +323,44 @@ def test_organizacion_desactivada_saca_a_sus_usuarios(pg, monkeypatch):
         c.execute(text("UPDATE organizaciones SET activa = FALSE WHERE id = :o"), {"o": org})
     assert seg.sigue_activo(u) is False
     assert seg.autenticar("ceo.sal", r["clave_temporal"]) is None
+
+
+def _con_clave(engine, username, clave, rol="director_cumplimiento"):
+    from sqlalchemy import text
+    from api.claves import hash_clave
+    with engine.begin() as c:
+        c.execute(text("INSERT INTO usuarios (username, nombre_completo, email, rol, password_hash, activo) "
+                       "VALUES (:u, :u, :e, :r, :h, 1)"), {"u": username, "e": f"{username}@x.co", "r": rol, "h": hash_clave(clave)})
+
+
+def test_el_usuario_no_distingue_mayusculas_y_la_clave_tolera_espacios(pg):
+    engine, _ = pg
+    _con_clave(engine, "Diego_Perez", "Ab3defGhjkMnpQr9")
+    for escrito in ("Diego_Perez", "diego_perez", "DIEGO_PEREZ"):
+        u = seg.autenticar(escrito, "Ab3defGhjkMnpQr9")
+        assert u is not None and u.username == "Diego_Perez" and u.rol == "director_cumplimiento"
+    assert seg.autenticar("diego_perez", "  Ab3defGhjkMnpQr9\n") is not None     # espacio colado al copiar
+    assert seg.autenticar("diego_perez", "ab3defGhjkMnpQr9") is None             # la clave sí distingue mayúsculas
+    assert seg.autenticar("diego_perez", "Ab3def Ghjk") is None
+
+
+def test_usuarios_antiguos_que_solo_difieren_en_mayusculas_exigen_la_forma_exacta(pg):
+    engine, _ = pg
+    _con_clave(engine, "ana", "Clave1Uno2Dos3Tr", "compliance")
+    _con_clave(engine, "Ana", "Clave1Uno2Dos3Tr", "compliance")
+    assert seg.autenticar("ANA", "Clave1Uno2Dos3Tr") is None                     # ambiguo: no adivina
+    assert seg.autenticar("Ana", "Clave1Uno2Dos3Tr").username == "Ana"
+    assert seg.autenticar("ana", "Clave1Uno2Dos3Tr").username == "ana"
+
+
+def test_los_usuarios_nuevos_se_guardan_en_minusculas_y_no_se_duplican(pg):
+    from fastapi import HTTPException
+    engine, _ = pg
+    jefe = seg.Usuario(1, "jefe", "Jefe", "super_admin")
+    r = ru.crear(ru.NuevoUsuario(username="Maria.Lopez", nombre="María López", email="Maria@X.co",
+                                 rol="director_cumplimiento"), _Peticion(), jefe)
+    assert r["username"] == "maria.lopez"
+    with pytest.raises(HTTPException) as e:
+        ru.crear(ru.NuevoUsuario(username="MARIA.LOPEZ", nombre="Otra", email="otra@x.co", rol="compliance"), _Peticion(), jefe)
+    assert e.value.status_code == 409
+    assert seg.autenticar("Maria.Lopez", r["clave_temporal"]).username == "maria.lopez"

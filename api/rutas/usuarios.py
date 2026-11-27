@@ -115,7 +115,8 @@ def _reglas_de_perfil(rol: str, organizacion_id: int | None, alcance: str | None
 @router.post("", status_code=201)
 def crear(datos: NuevoUsuario, request: Request, u: seg.Usuario = Depends(solo_super_admin)) -> dict:
     from db.database import engine
-    username, email, nombre = datos.username.strip(), datos.email.strip().lower(), datos.nombre.strip()
+    # Los usuarios nuevos se guardan en minúsculas (el ingreso no distingue mayúsculas)
+    username, email, nombre = datos.username.strip().lower(), datos.email.strip().lower(), datos.nombre.strip()
     if not _USERNAME.match(username):
         raise HTTPException(400, "Usuario no válido: de 3 a 60 caracteres (letras, números, punto, guion).")
     if not _EMAIL.match(email):
@@ -124,6 +125,8 @@ def crear(datos: NuevoUsuario, request: Request, u: seg.Usuario = Depends(solo_s
     clave = clave_temporal()
     try:
         with engine.begin() as conn:
+            if conn.scalar(text("SELECT 1 FROM usuarios WHERE lower(username) = :u"), {"u": username}):
+                raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un usuario con ese nombre de usuario o correo.")
             if datos.organizacion_id is not None:
                 activa = conn.scalar(text("SELECT activa FROM organizaciones WHERE id = :id"),
                                      {"id": datos.organizacion_id})
