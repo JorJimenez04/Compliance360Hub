@@ -10,10 +10,12 @@ import type { Ficha } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
 import FichaOrganizacion from "./ficha";
 import ClientesOrganizacion from "./clientes";
+import AliadosOrganizacion from "./aliados";
 import { ListaAlertas } from "@/components/cumplimiento/alertas";
 
 const PESTANAS = [
   { id: "clientes", nombre: "Clientes" },
+  { id: "aliados", nombre: "Aliados bancarios" },
   { id: "alertas", nombre: "Alertas y casos" },
   { id: "ficha", nombre: "Ficha de la organización" },
 ] as const;
@@ -53,6 +55,7 @@ function Vista({ id }: { id: number }) {
         ))}
       </div>
       {pestana === "clientes" ? <ClientesOrganizacion organizacionId={id} />
+        : pestana === "aliados" ? <AliadosOrganizacion organizacionId={id} nombre={ficha.datos?.nombre} />
         : pestana === "alertas" ? <ListaAlertas ruta={`/api/organizaciones/${id}/alertas`} />
         : <FichaOrganizacion id={id} embebida />}
     </div>
