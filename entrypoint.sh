@@ -27,16 +27,10 @@ python -m db.database
 python db/sync_db.py
 echo "[AdamoServices] Migraciones completadas."
 
-# ── 3. Seed de usuarios de prueba ────────────────────────────────
-# Usa ADMIN_PASSWORD (inyectada por Railway) para generar hashes bcrypt reales.
-# El script es idempotente: omite usuarios que ya existen.
-if [ -n "${ADMIN_PASSWORD:-}" ]; then
-    echo "[AdamoServices] Ejecutando seed de usuarios de prueba..."
-    python db/seed_test_users.py --password "$ADMIN_PASSWORD"
-    echo "[AdamoServices] Seed completado."
-else
-    echo "[AdamoServices] ADVERTENCIA: ADMIN_PASSWORD no definida — seed omitido."
-fi
+# ── 3. (Retirado 2026-11-27) Seed de usuarios de prueba ───────────
+# Creaba cuentas de prueba con perfiles de la app anterior (test_manager_ops,
+# test_agente…) en cada despliegue. Desde la migración 044 la base solo acepta los
+# perfiles actuales y los usuarios se crean únicamente desde la pantalla Usuarios.
 
 # ── 4. Propagar SECRET_KEY como clave de firma de cookies de sesión ────────
 # Streamlit usa STREAMLIT_SERVER_COOKIE_SECRET para firmar el token de sesión.

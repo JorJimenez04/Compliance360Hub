@@ -135,4 +135,7 @@ def seed_test_users() -> None:
 
 
 if __name__ == "__main__":
-    seed_test_users()
+    # Retirado (2026-11-27): desde la migración 044 la base solo acepta los perfiles actuales
+    # y los usuarios se crean únicamente desde la pantalla Usuarios de la plataforma.
+    print("[seed] Retirado: los usuarios se crean desde la pantalla Usuarios. No se hizo nada.")
+    sys.exit(0)
