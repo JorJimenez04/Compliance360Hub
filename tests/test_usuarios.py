@@ -402,3 +402,60 @@ def test_restablecer_con_clave_escrita(pg):
     # sin cuerpo sigue generando una al azar
     g = ru.restablecer(_id(engine, "diego"), _Peticion(), jefe)
     assert len(g["clave_temporal"]) == 16 and seg.autenticar("diego", g["clave_temporal"]) is not None
+
+
+# ---------- Cuentas internas visibles, duplicados claros y edición completa ----------
+JEFE = seg.Usuario(1, "jefe", "Jefe", "super_admin")
+
+
+def test_el_listado_muestra_las_cuentas_internas_aparte(pg):
+    r = ru.listar(JEFE)
+    assert "jefazo" in [x["username"] for x in r["internos"]]
+    assert "jefazo" not in [x["username"] for x in r["usuarios"]]
+    assert "interno" in [x["username"] for x in r["usuarios"]]          # compliance sí se gestiona
+
+
+def test_el_duplicado_dice_que_cuenta_lo_tiene(pg):
+    from sqlalchemy import text
+    engine, _ = pg
+    with engine.begin() as c:
+        c.execute(text("UPDATE usuarios SET email = 'jorge@adamo.co' WHERE username = 'jefazo'"))
+    with pytest.raises(HTTPException) as e:
+        _crear(dict(username="nuevo", nombre="Nuevo", email="Jorge@Adamo.co", rol="compliance"))
+    assert e.value.status_code == 409 and "«jefazo» (Super admin)" in e.value.detail and "correo" in e.value.detail
+    with pytest.raises(HTTPException) as e:
+        _crear(dict(username="JEFAZO", nombre="Nuevo", email="otro@x.co", rol="compliance"))
+    assert "El usuario «jefazo»" in e.value.detail
+
+
+def test_editar_usuario_nombre_y_rol(pg):
+    from sqlalchemy import text
+    engine, _ = pg
+    uid = _id(engine, "interno")
+    ru.cambiar(uid, ru.CambioUsuario(username="Diego.P", rol="director_cumplimiento"), _Peticion(), JEFE)
+    with engine.connect() as c:
+        assert c.execute(text("SELECT username, rol FROM usuarios WHERE id = :i"), {"i": uid}).one() == \
+            ("diego.p", "director_cumplimiento")
+    with pytest.raises(HTTPException) as e:                              # usuario ocupado por otra cuenta
+        ru.cambiar(uid, ru.CambioUsuario(username="jefazo"), _Peticion(), JEFE)
+    assert e.value.status_code == 409
+    ru.cambiar(uid, ru.CambioUsuario(username="DIEGO.P", nombre="Diego"), _Peticion(), JEFE)   # el propio no choca
+
+
+def test_pasar_de_interno_a_cliente_y_mover_de_organizacion(pg):
+    from sqlalchemy import text
+    engine, _ = pg
+    adamo, otra = _org(engine), _org(engine, "Paycop")
+    uid = _id(engine, "interno")
+    with pytest.raises(HTTPException):                                   # cliente sin organización
+        ru.cambiar(uid, ru.CambioUsuario(rol="cliente"), _Peticion(), JEFE)
+    ru.cambiar(uid, ru.CambioUsuario(rol="cliente", organizacion_id=adamo), _Peticion(), JEFE)
+    ru.cambiar(uid, ru.CambioUsuario(organizacion_id=otra), _Peticion(), JEFE)
+    with engine.connect() as c:
+        assert c.execute(text("SELECT rol, organizacion_id, alcance FROM usuarios WHERE id = :i"), {"i": uid}).one() == \
+            ("cliente", otra, "organizacion")
+    ru.cambiar(uid, ru.CambioUsuario(rol="compliance"), _Peticion(), JEFE)       # vuelve al equipo interno
+    with engine.connect() as c:
+        assert c.execute(text("SELECT organizacion_id, alcance FROM usuarios WHERE id = :i"), {"i": uid}).one() == (None, None)
+    with pytest.raises(HTTPException):
+        ru.cambiar(uid, ru.CambioUsuario(rol="super_admin"), _Peticion(), JEFE)
