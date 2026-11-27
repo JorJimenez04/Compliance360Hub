@@ -22,7 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from api import seguridad as seg
-from api.claves import clave_temporal, hash_clave
+from api.claves import clave_temporal, hash_clave, validar_clave
 from core.monitoreo_tx.config import ALCANCE_EMPRESAS, ALCANCE_ORGANIZACION
 
 router = APIRouter(prefix="/api/usuarios", tags=["usuarios"])
@@ -61,7 +61,45 @@ def listar(u: seg.Usuario = Depends(solo_super_admin)) -> dict:
         "ultimo_acceso": _iso(f["ultimo_acceso"]),
         "organizacion_id": f["organizacion_id"], "organizacion": f["organizacion"],
         "alcance": f["alcance"], "empresas_ids": list(f["empresas_ids"]), "empresas": f["empresas"],
-    } for f in filas]}
+    } for f in filas], "internos": _internos()}
+
+
+NOMBRE_ROL = {"super_admin": "Super admin", "admin": "Admin", "cliente": "Cliente", "junta": "Junta",
+              "compliance": "Compliance", "director_cumplimiento": "Director de cumplimiento",
+              # Perfiles de la app anterior (Streamlit): siguen en la base pero no se gestionan aquí
+              "manager_ops": "Gerente de operaciones (app anterior)", "manager_comercial": "Gerente comercial (app anterior)",
+              "manager_legal": "Gerente legal (app anterior)", "agente": "Agente (app anterior)",
+              "cic": "Inteligencia comercial (app anterior)", "comercial": "Comercial (app anterior)",
+              "agente_kyc": "Agente KYC (app anterior)", "agente_operativo": "Agente operativo (app anterior)",
+              "consulta": "Consulta (app anterior)"}
+
+
+def _internos() -> list[dict]:
+    """Toda cuenta que no se gestiona aquí (super_admin, admin y perfiles de la app anterior): se muestra
+    para saber quién ocupa un usuario o correo."""
+    from db.database import engine
+    with engine.connect() as conn:
+        filas = conn.execute(text(
+            "SELECT id, username, nombre_completo, email, rol, activo, ultimo_acceso FROM usuarios "
+            "WHERE NOT (rol = ANY(:roles)) ORDER BY (rol = 'super_admin') DESC, (rol = 'admin') DESC, nombre_completo"),
+            {"roles": list(ROLES_GESTIONADOS)}).mappings().all()
+    return [{"id": f["id"], "username": f["username"], "nombre": f["nombre_completo"] or f["username"],
+             "email": f["email"], "rol": f["rol"], "perfil": NOMBRE_ROL.get(f["rol"], f["rol"]), "activo": bool(f["activo"]),
+             "ultimo_acceso": _iso(f["ultimo_acceso"])} for f in filas]
+
+
+def _ocupado(conn, username: str | None, email: str | None, excepto: int | None = None) -> None:
+    """409 que dice qué cuenta ya usa el usuario o el correo (sin distinguir mayúsculas)."""
+    for campo, valor, texto in (("username", username, "El usuario «{v}»"), ("email", email, "El correo {v}")):
+        if not valor:
+            continue
+        fila = conn.execute(text(f"SELECT username, rol FROM usuarios WHERE lower({campo}) = :v "
+                                 "AND (CAST(:x AS INTEGER) IS NULL OR id <> :x) LIMIT 1"),
+                            {"v": valor.lower(), "x": excepto}).mappings().first()
+        if fila:
+            raise HTTPException(status.HTTP_409_CONFLICT,
+                                f"{texto.format(v=valor)} ya lo usa la cuenta «{fila['username']}» "
+                                f"({NOMBRE_ROL.get(fila['rol'], fila['rol'])}).")
 
 
 # Compatibilidad con la versión anterior de la pantalla: solo clientes
@@ -78,6 +116,21 @@ class NuevoUsuario(BaseModel):
     organizacion_id: int | None = None
     alcance: str | None = None
     empresas: list[int] = Field(default_factory=list, max_length=200)
+    # Opcional: la clave la escribe el super_admin. Si no viene, se genera una al azar.
+    clave: str | None = Field(None, max_length=128)
+
+
+class ClaveManual(BaseModel):
+    clave: str | None = Field(None, max_length=128)
+
+
+def _clave_elegida(escrita: str | None) -> tuple[str, bool]:
+    """(clave, generada). Valida la escrita a mano; si no hay, genera una."""
+    if escrita is None or escrita == "":
+        return clave_temporal(), True
+    if (motivo := validar_clave(escrita)):
+        raise HTTPException(400, motivo)
+    return escrita, False
 
 
 def _validar_empresas(conn, organizacion_id: int, empresas: list[int]) -> None:
@@ -122,11 +175,10 @@ def crear(datos: NuevoUsuario, request: Request, u: seg.Usuario = Depends(solo_s
     if not _EMAIL.match(email):
         raise HTTPException(400, "Correo no válido.")
     _reglas_de_perfil(datos.rol, datos.organizacion_id, datos.alcance, datos.empresas)
-    clave = clave_temporal()
+    clave, generada = _clave_elegida(datos.clave)
     try:
         with engine.begin() as conn:
-            if conn.scalar(text("SELECT 1 FROM usuarios WHERE lower(username) = :u"), {"u": username}):
-                raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un usuario con ese nombre de usuario o correo.")
+            _ocupado(conn, username, email)
             if datos.organizacion_id is not None:
                 activa = conn.scalar(text("SELECT activa FROM organizaciones WHERE id = :id"),
                                      {"id": datos.organizacion_id})
@@ -146,16 +198,21 @@ def crear(datos: NuevoUsuario, request: Request, u: seg.Usuario = Depends(solo_s
     except IntegrityError:
         raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un usuario con ese nombre de usuario o correo.")
     seg.auditar(u, "CREATE", "usuarios",
-                f"Usuario «{username}» ({datos.rol}) creado por {u.username}", entidad_id=nuevo,
+                f"Usuario «{username}» ({datos.rol}) creado por {u.username} "
+                f"({'clave generada' if generada else 'clave asignada a mano'})", entidad_id=nuevo,
                 ip=seg.ip_cliente(request),
                 valores_nuevos={"rol": datos.rol, "organizacion_id": datos.organizacion_id,
                                 "alcance": datos.alcance, "empresas": sorted(set(datos.empresas))})
-    return {"id": nuevo, "username": username, "clave_temporal": clave}
+    # Una clave escrita por el super_admin no se devuelve: él ya la conoce
+    return {"id": nuevo, "username": username, "clave_temporal": clave if generada else None}
 
 
 class CambioUsuario(BaseModel):
+    username: str | None = Field(None, min_length=3, max_length=60)
     nombre: str | None = Field(None, min_length=2, max_length=120)
     email: str | None = Field(None, min_length=5, max_length=160)
+    rol: str | None = None
+    organizacion_id: int | None = None
     activo: bool | None = None
     alcance: str | None = None
     empresas: list[int] | None = Field(None, max_length=200)
@@ -173,13 +230,22 @@ def _gestionado(conn, usuario_id: int):
 @router.patch("/{usuario_id}")
 def cambiar(usuario_id: int, datos: CambioUsuario, request: Request,
             u: seg.Usuario = Depends(solo_super_admin)) -> dict:
-    """Cambiar el alcance invalida la sesión abierta del usuario (seguridad.sigue_activo)."""
+    """Cambiar el rol, la organización o el alcance invalida la sesión abierta (seguridad.sigue_activo)."""
     from db.database import engine
     cambios = datos.model_dump(exclude_unset=True)
     try:
         with engine.begin() as conn:
             fila = _gestionado(conn, usuario_id)
             valores: dict = {}
+            username = email = None
+            if cambios.get("username") is not None:
+                username = cambios["username"].strip().lower()
+                if not _USERNAME.match(username):
+                    raise HTTPException(400, "Usuario no válido: de 3 a 60 caracteres (letras, números, punto, guion).")
+                if username != fila["username"].lower():
+                    valores["username"] = username
+                else:
+                    username = None
             if cambios.get("nombre") is not None:
                 valores["nombre_completo"] = cambios["nombre"].strip()
             if cambios.get("email") is not None:
@@ -187,36 +253,55 @@ def cambiar(usuario_id: int, datos: CambioUsuario, request: Request,
                 if not _EMAIL.match(email):
                     raise HTTPException(400, "Correo no válido.")
                 valores["email"] = email
-            if cambios.get("activo") is not None:
-                if cambios["activo"] and fila["rol"] == ROL_CLIENTE and fila["alcance"] == ALCANCE_EMPRESAS \
-                        and cambios.get("alcance") != ALCANCE_ORGANIZACION:
-                    raise HTTPException(400, "Este usuario era de un cliente de su cliente: esos perfiles ya no tienen acceso.")
-                valores["activo"] = 1 if cambios["activo"] else 0
-            toca_alcance = "alcance" in cambios or "empresas" in cambios
-            if toca_alcance:
-                if fila["rol"] != ROL_CLIENTE:
-                    raise HTTPException(400, "El alcance y las empresas solo aplican al perfil cliente.")
-                alcance = cambios.get("alcance") or fila["alcance"]
-                if "empresas" in cambios and cambios["empresas"] is not None:
+            _ocupado(conn, username, email, excepto=usuario_id)
+
+            # Perfil: rol, organización, alcance y empresas se validan juntos con su estado final
+            toca_perfil = any(k in cambios for k in ("rol", "organizacion_id", "alcance", "empresas"))
+            if toca_perfil:
+                rol = cambios.get("rol") or fila["rol"]
+                org = cambios["organizacion_id"] if "organizacion_id" in cambios else fila["organizacion_id"]
+                if rol not in ("cliente", "junta"):
+                    org = None                       # el equipo interno no pertenece a una organización
+                if rol == ROL_CLIENTE:
+                    alcance = cambios.get("alcance") or (fila["alcance"] if fila["rol"] == ROL_CLIENTE
+                                                         else ALCANCE_ORGANIZACION)
+                else:
+                    alcance = None
+                misma_org = org == fila["organizacion_id"]
+                if cambios.get("empresas") is not None:
                     empresas = cambios["empresas"]
-                elif alcance == ALCANCE_EMPRESAS:
+                elif rol == ROL_CLIENTE and alcance == ALCANCE_EMPRESAS and misma_org:
                     empresas = list(conn.scalars(text("SELECT empresa_id FROM usuario_empresas WHERE usuario_id = :u"),
                                                  {"u": usuario_id}))
                 else:
                     empresas = []
-                _reglas_de_perfil(ROL_CLIENTE, fila["organizacion_id"], alcance, empresas)
-                _validar_empresas(conn, fila["organizacion_id"], empresas)
-                valores["alcance"] = alcance
+                _reglas_de_perfil(rol, org, alcance, empresas)
+                if org is not None and not misma_org:
+                    activa = conn.scalar(text("SELECT activa FROM organizaciones WHERE id = :id"), {"id": org})
+                    if activa is None:
+                        raise HTTPException(404, "La organización no existe.")
+                    if not activa:
+                        raise HTTPException(400, "La organización está inactiva.")
+                if org is not None:
+                    _validar_empresas(conn, org, empresas)
+                valores.update(rol=rol, organizacion_id=org, alcance=alcance)
                 conn.execute(text("DELETE FROM usuario_empresas WHERE usuario_id = :u"), {"u": usuario_id})
                 for empresa_id in sorted(set(empresas)):
                     conn.execute(text("INSERT INTO usuario_empresas (usuario_id, empresa_id) VALUES (:u, :e)"),
                                  {"u": usuario_id, "e": empresa_id})
+
+            if cambios.get("activo") is not None:
+                alcance_final = valores.get("alcance", fila["alcance"])
+                rol_final = valores.get("rol", fila["rol"])
+                if cambios["activo"] and rol_final == ROL_CLIENTE and alcance_final == ALCANCE_EMPRESAS:
+                    raise HTTPException(400, "Este usuario era de un cliente de su cliente: esos perfiles ya no tienen acceso.")
+                valores["activo"] = 1 if cambios["activo"] else 0
             if valores:
                 sets = ", ".join(f"{k} = :{k}" for k in valores)
                 conn.execute(text(f"UPDATE usuarios SET {sets}, updated_at = CURRENT_TIMESTAMP WHERE id = :id"),
                              {**valores, "id": usuario_id})
     except IntegrityError:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un usuario con ese correo.")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ya existe un usuario con ese nombre de usuario o correo.")
     seg.auditar(u, "UPDATE", "usuarios", f"Usuario «{fila['username']}» modificado por {u.username}",
                 entidad_id=usuario_id, ip=seg.ip_cliente(request),
                 valores_nuevos={k: v for k, v in cambios.items()})
@@ -224,18 +309,19 @@ def cambiar(usuario_id: int, datos: CambioUsuario, request: Request,
 
 
 @router.post("/{usuario_id}/restablecer-clave")
-def restablecer(usuario_id: int, request: Request, u: seg.Usuario = Depends(solo_super_admin)) -> dict:
+def restablecer(usuario_id: int, request: Request, u: seg.Usuario = Depends(solo_super_admin),
+                datos: ClaveManual | None = None) -> dict:
     from db.database import engine
-    nueva = clave_temporal()
+    nueva, generada = _clave_elegida(datos.clave if datos else None)
     with engine.begin() as conn:
         # Solo perfiles gestionados aquí: un super_admin u otro rol interno no se toca desde esta pantalla
         fila = _gestionado(conn, usuario_id)
         conn.execute(text("UPDATE usuarios SET password_hash = :h, activo = 1, updated_at = CURRENT_TIMESTAMP "
                           "WHERE id = :id"), {"h": hash_clave(nueva), "id": usuario_id})
     seg.auditar(u, "UPDATE", "usuarios",
-                f"Clave de «{fila['username']}» ({fila['rol']}) restablecida por {u.username}",
+                f"Clave de «{fila['username']}» ({fila['rol']}) {'generada' if generada else 'asignada a mano'} por {u.username}",
                 entidad_id=usuario_id, ip=seg.ip_cliente(request))
-    return {"username": fila["username"], "clave_temporal": nueva}
+    return {"username": fila["username"], "clave_temporal": nueva if generada else None}
 
 
 # Ruta anterior (pantalla vieja): misma regla, solo clientes

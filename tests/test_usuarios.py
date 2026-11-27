@@ -364,3 +364,109 @@ def test_los_usuarios_nuevos_se_guardan_en_minusculas_y_no_se_duplican(pg):
         ru.crear(ru.NuevoUsuario(username="MARIA.LOPEZ", nombre="Otra", email="otra@x.co", rol="compliance"), _Peticion(), jefe)
     assert e.value.status_code == 409
     assert seg.autenticar("Maria.Lopez", r["clave_temporal"]).username == "maria.lopez"
+
+
+# ---------- Clave escrita a mano por el super_admin ----------
+CLAVE_MANUAL = "Adamo2026Segura"
+
+
+def test_crear_con_clave_escrita_no_la_devuelve_ni_la_audita(pg):
+    engine, registros = pg
+    jefe = seg.Usuario(1, "jefe", "Jefe", "super_admin")
+    r = ru.crear(ru.NuevoUsuario(username="laura", nombre="Laura", email="laura@x.co", rol="compliance",
+                                 clave=CLAVE_MANUAL), _Peticion(), jefe)
+    assert r["clave_temporal"] is None
+    assert seg.autenticar("laura", CLAVE_MANUAL).username == "laura"
+    assert CLAVE_MANUAL not in str(registros) and "asignada a mano" in str(registros)
+
+
+@pytest.mark.parametrize("debil", ["Corta1A", "todominuscula123", "TODOMAYUSCULA123", "SinNumerosNiNada",
+                                   " Adamo2026Segura", "Adamo2026Segura "])
+def test_una_clave_debil_se_rechaza(pg, debil):
+    jefe = seg.Usuario(1, "jefe", "Jefe", "super_admin")
+    with pytest.raises(HTTPException) as e:
+        ru.crear(ru.NuevoUsuario(username="pedro", nombre="Pedro", email="pedro@x.co", rol="compliance",
+                                 clave=debil), _Peticion(), jefe)
+    assert e.value.status_code == 400
+
+
+def test_restablecer_con_clave_escrita(pg):
+    engine, registros = pg
+    jefe = seg.Usuario(1, "jefe", "Jefe", "super_admin")
+    _con_clave(engine, "diego", "Vieja1ClaveLarga")
+    r = ru.restablecer(_id(engine, "diego"), _Peticion(), jefe, ru.ClaveManual(clave=CLAVE_MANUAL))
+    assert r["clave_temporal"] is None
+    assert seg.autenticar("diego", CLAVE_MANUAL) is not None
+    assert seg.autenticar("diego", "Vieja1ClaveLarga") is None
+    assert CLAVE_MANUAL not in str(registros)
+    # sin cuerpo sigue generando una al azar
+    g = ru.restablecer(_id(engine, "diego"), _Peticion(), jefe)
+    assert len(g["clave_temporal"]) == 16 and seg.autenticar("diego", g["clave_temporal"]) is not None
+
+
+# ---------- Cuentas internas visibles, duplicados claros y edición completa ----------
+JEFE = seg.Usuario(1, "jefe", "Jefe", "super_admin")
+
+
+def test_el_listado_muestra_las_cuentas_internas_aparte(pg):
+    r = ru.listar(JEFE)
+    assert "jefazo" in [x["username"] for x in r["internos"]]
+    assert "jefazo" not in [x["username"] for x in r["usuarios"]]
+    assert "interno" in [x["username"] for x in r["usuarios"]]          # compliance sí se gestiona
+
+
+def test_el_duplicado_dice_que_cuenta_lo_tiene(pg):
+    from sqlalchemy import text
+    engine, _ = pg
+    with engine.begin() as c:
+        c.execute(text("UPDATE usuarios SET email = 'jorge@adamo.co' WHERE username = 'jefazo'"))
+    with pytest.raises(HTTPException) as e:
+        _crear(dict(username="nuevo", nombre="Nuevo", email="Jorge@Adamo.co", rol="compliance"))
+    assert e.value.status_code == 409 and "«jefazo» (Super admin)" in e.value.detail and "correo" in e.value.detail
+    with pytest.raises(HTTPException) as e:
+        _crear(dict(username="JEFAZO", nombre="Nuevo", email="otro@x.co", rol="compliance"))
+    assert "El usuario «jefazo»" in e.value.detail
+
+
+def test_editar_usuario_nombre_y_rol(pg):
+    from sqlalchemy import text
+    engine, _ = pg
+    uid = _id(engine, "interno")
+    ru.cambiar(uid, ru.CambioUsuario(username="Diego.P", rol="director_cumplimiento"), _Peticion(), JEFE)
+    with engine.connect() as c:
+        assert c.execute(text("SELECT username, rol FROM usuarios WHERE id = :i"), {"i": uid}).one() == \
+            ("diego.p", "director_cumplimiento")
+    with pytest.raises(HTTPException) as e:                              # usuario ocupado por otra cuenta
+        ru.cambiar(uid, ru.CambioUsuario(username="jefazo"), _Peticion(), JEFE)
+    assert e.value.status_code == 409
+    ru.cambiar(uid, ru.CambioUsuario(username="DIEGO.P", nombre="Diego"), _Peticion(), JEFE)   # el propio no choca
+
+
+def test_pasar_de_interno_a_cliente_y_mover_de_organizacion(pg):
+    from sqlalchemy import text
+    engine, _ = pg
+    adamo, otra = _org(engine), _org(engine, "Paycop")
+    uid = _id(engine, "interno")
+    with pytest.raises(HTTPException):                                   # cliente sin organización
+        ru.cambiar(uid, ru.CambioUsuario(rol="cliente"), _Peticion(), JEFE)
+    ru.cambiar(uid, ru.CambioUsuario(rol="cliente", organizacion_id=adamo), _Peticion(), JEFE)
+    ru.cambiar(uid, ru.CambioUsuario(organizacion_id=otra), _Peticion(), JEFE)
+    with engine.connect() as c:
+        assert c.execute(text("SELECT rol, organizacion_id, alcance FROM usuarios WHERE id = :i"), {"i": uid}).one() == \
+            ("cliente", otra, "organizacion")
+    ru.cambiar(uid, ru.CambioUsuario(rol="compliance"), _Peticion(), JEFE)       # vuelve al equipo interno
+    with engine.connect() as c:
+        assert c.execute(text("SELECT organizacion_id, alcance FROM usuarios WHERE id = :i"), {"i": uid}).one() == (None, None)
+    with pytest.raises(HTTPException):
+        ru.cambiar(uid, ru.CambioUsuario(rol="super_admin"), _Peticion(), JEFE)
+
+
+def test_la_base_ya_no_acepta_perfiles_de_la_app_anterior(pg):
+    """Migración 044: solo quedan los perfiles de la plataforma actual."""
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+    engine, _ = pg
+    with pytest.raises(IntegrityError):
+        with engine.begin() as c:
+            c.execute(text("INSERT INTO usuarios (username, nombre_completo, email, rol, password_hash, activo) "
+                           "VALUES ('viejo', 'Viejo', 'viejo@x.co', 'manager_ops', 'x', 1)"))
