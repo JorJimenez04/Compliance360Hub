@@ -82,7 +82,10 @@ export default function Usuarios() {
 
   async function copiar() {
     if (!resultado) return;
-    try { await navigator.clipboard.writeText(resultado.clave_temporal); setCopiado(true); } catch { /* se puede copiar a mano */ }
+    try {
+      await navigator.clipboard.writeText(`Usuario: ${resultado.username}\nClave: ${resultado.clave_temporal}`);
+      setCopiado(true);
+    } catch { /* se puede seleccionar y copiar a mano */ }
   }
 
   const poner = (cambios: Partial<typeof VACIO>) => setForm((f) => ({ ...f, ...cambios }));
@@ -99,17 +102,32 @@ export default function Usuarios() {
       {error && <Aviso tono="critico" icono={<AlertTriangle className="size-4" />}>{error}</Aviso>}
 
       {resultado && (
-        <Tarjeta className="border-acento/40">
-          <TituloTarjeta titulo={resultado.titulo}
-            descripcion="La clave temporal se muestra una sola vez. Al cerrar este aviso no se puede volver a ver." />
-          <div className="flex flex-wrap items-center gap-3 px-5 pb-4 pt-3">
-            <code className="select-all rounded-lg border border-borde-fuerte bg-fondo px-3 py-2 font-mono text-base tracking-wider">
-              {resultado.clave_temporal}
-            </code>
-            <Boton onClick={copiar}>{copiado ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}{copiado ? "Copiada" : "Copiar"}</Boton>
-            <Boton variante="fantasma" onClick={() => setResultado(null)}>Cerrar</Boton>
+        // Ventana al centro: la clave solo se ve una vez y no puede pasar desapercibida
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog"
+          aria-modal="true" aria-labelledby="titulo-clave">
+          <div className="w-full max-w-lg rounded-2xl border border-acento/40 bg-panel p-6 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-acento-tenue text-acento"><KeyRound className="size-5" aria-hidden /></span>
+              <div>
+                <h2 id="titulo-clave" className="text-lg font-semibold">{resultado.titulo}</h2>
+                <p className="mt-1 text-sm text-texto-3">Esta clave se muestra <strong className="text-texto">una sola vez</strong>. Cópiela ahora y entréguela por mensajería, no dictada.</p>
+              </div>
+            </div>
+            <div className="mt-5 space-y-1.5 rounded-xl border border-borde-fuerte bg-fondo p-4">
+              <p className="text-xs text-texto-3">Usuario</p>
+              <p className="select-all font-mono text-base">{resultado.username}</p>
+              <p className="pt-2 text-xs text-texto-3">Clave temporal</p>
+              <p className="select-all break-all font-mono text-2xl tracking-widest text-acento">{resultado.clave_temporal}</p>
+            </div>
+            <p className="mt-3 text-xs text-texto-3">El usuario no distingue mayúsculas. Si genera otra clave, esta deja de funcionar.</p>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Boton variante="primario" onClick={copiar}>
+                {copiado ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}{copiado ? "Copiada" : "Copiar usuario y clave"}</Boton>
+              <Boton onClick={() => { if (copiado || window.confirm("¿Cerrar sin copiar? La clave no se podrá volver a ver.")) setResultado(null); }}>
+                Listo, ya la entregué</Boton>
+            </div>
           </div>
-        </Tarjeta>
+        </div>
       )}
 
       <Tarjeta>
@@ -136,7 +154,8 @@ export default function Usuarios() {
               <Entrada id="u-email" type="email" required value={form.email} onChange={(e) => poner({ email: e.target.value })} /></div>
             <div><Etiqueta htmlFor="u-usuario">Usuario</Etiqueta>
               <Entrada id="u-usuario" required pattern="[A-Za-z0-9._\-]{3,60}" title="De 3 a 60 caracteres: letras, números, punto o guion"
-                value={form.username} onChange={(e) => poner({ username: e.target.value })} placeholder="nombre.apellido" /></div>
+                value={form.username} onChange={(e) => poner({ username: e.target.value.toLowerCase().replace(/\s/g, "") })} placeholder="nombre.apellido" />
+              <p className="mt-1 text-xs text-texto-3">Se guarda en minúsculas; al ingresar no importan las mayúsculas.</p></div>
           </div>
 
           {externo && (

@@ -187,21 +187,30 @@ def autenticar(username: str, password: str) -> Usuario | None:
                        email=os.getenv("ADMIN_EMAIL", ""))
 
     with engine.connect() as conn:
-        fila = conn.execute(
+        # El usuario no distingue mayúsculas («Diego_Perez» = «diego_perez»). Si dos usuarios antiguos
+        # solo se diferencian por mayúsculas, se exige la forma exacta para no confundirlos.
+        filas = conn.execute(
             text("SELECT u.id, u.username, u.nombre_completo, u.email, u.rol, u.organizacion_id, u.alcance, "
                  "u.password_hash FROM usuarios u "
                  "LEFT JOIN organizaciones o ON o.id = u.organizacion_id "
                  # Un usuario externo de una organización desactivada no puede ingresar
-                 "WHERE u.username = :u AND u.activo = 1 AND COALESCE(o.activa, TRUE)"), {"u": username},
-        ).mappings().first()
+                 "WHERE lower(u.username) = lower(:u) AND u.activo = 1 AND COALESCE(o.activa, TRUE) "
+                 "ORDER BY (u.username = :u) DESC, u.id LIMIT 2"), {"u": username},
+        ).mappings().all()
+    fila = filas[0] if filas and (len(filas) == 1 or filas[0]["username"] == username) else None
     if not fila or fila["password_hash"] in ("", "PLACEHOLDER_HASH"):
         # Se compara igual contra un hash ficticio: misma demora exista o no el usuario
         bcrypt.checkpw(b"x", _hash_ficticio())
         return None
-    try:
-        valido = bcrypt.checkpw(password.encode(), fila["password_hash"].encode())
-    except ValueError:
-        valido = False
+    valido = False
+    # Las claves que entrega la plataforma no tienen espacios: se toleran los que se cuelan al copiar.
+    for candidata in dict.fromkeys((password, password.strip())):
+        try:
+            if candidata and bcrypt.checkpw(candidata.encode(), fila["password_hash"].encode()):
+                valido = True
+                break
+        except ValueError:
+            pass
     if not valido:
         return None
     with engine.begin() as conn:
