@@ -18,7 +18,8 @@ MIGRACIONES = pathlib.Path(__file__).resolve().parent.parent / "db" / "migration
 DEL_MODULO = ("027_clientes.sql", "028_cliente_personas.sql", "029_cliente_contratos.sql", "030_contrato_servicios.sql",
               "031_cliente_documentos.sql", "032_cliente_historial_riesgo.sql", "035_monitoreo_transaccional.sql", "036_tx_sincronizacion_nube.sql",
               "037_rol_cliente.sql", "038_organizaciones.sql", "039_ficha_organizacion.sql",
-              "040_clientes_alertas.sql", "041_actividades_ciiu.sql", "042_documentacion_onedrive.sql", "043_rol_director_cumplimiento.sql")
+              "040_clientes_alertas.sql", "041_actividades_ciiu.sql", "042_documentacion_onedrive.sql", "043_rol_director_cumplimiento.sql",
+              "044_eliminar_perfiles_anteriores.sql")
 
 
 def crear_esquema_minimo(engine: Engine) -> None:

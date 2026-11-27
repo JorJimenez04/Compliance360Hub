@@ -264,7 +264,7 @@ export default function Usuarios() {
 
       {(usuarios.datos?.internos?.length ?? 0) > 0 && (
         <Tarjeta>
-          <TituloTarjeta titulo="Cuentas internas" descripcion="Administración de la plataforma y perfiles de la app anterior. Se muestran para saber quién usa cada usuario o correo; no se editan desde aquí." />
+          <TituloTarjeta titulo="Cuentas internas" descripcion="Administración de la plataforma (super admin y admin). Se muestran para saber quién usa cada usuario o correo; no se editan desde aquí." />
           <div className="overflow-x-auto px-5 pb-4 pt-3">
             <table className="w-full min-w-[700px] text-left text-sm">
               <thead className="text-xs uppercase tracking-wider text-texto-3">
