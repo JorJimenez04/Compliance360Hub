@@ -8,6 +8,7 @@ import { useDatos } from "@/lib/useDatos";
 import { usePuedeGestionar } from "@/lib/sesion";
 import { fecha, fechaHora } from "@/lib/formato";
 import { cn } from "@/lib/cn";
+import { RequerimientosRelacionados } from "./requerimientos";
 
 const area = "w-full rounded-lg border border-borde-fuerte bg-fondo px-3 py-2 text-sm text-texto focus:border-acento focus:outline-none";
 
@@ -146,6 +147,9 @@ export default function AliadosOrganizacion({ organizacionId, nombre }: { organi
 
       {abierto && <DetalleAliado key={abierto} organizacionId={organizacionId} relacionId={abierto} cat={c}
         onCambio={datos.recargar} onCerrar={() => setAbierto(null)} />}
+      {abierto && <RequerimientosRelacionados key={`rq-${abierto}`} ruta={`/api/organizaciones/${organizacionId}/aliados/${abierto}/requerimientos`}
+        organizacionId={organizacionId} prellenar={`aliado:${abierto}`} titulo="Requerimientos de este aliado"
+        vacio="Este aliado no ha hecho requerimientos." />}
     </div>
   );
 }
