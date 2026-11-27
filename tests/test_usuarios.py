@@ -57,6 +57,10 @@ def test_el_menu_de_usuarios_solo_lo_ve_el_super_admin():
     assert "usuarios" in seg.modulos_visibles("super_admin")
     for rol in ("admin", "compliance", "cliente", "junta"):
         assert "usuarios" not in seg.modulos_visibles(rol)
+    # Organizaciones: todo el equipo interno la consulta (crear y editar sigue siendo solo del super_admin)
+    for rol in ("admin", "compliance", "director_cumplimiento"):
+        assert "organizaciones" in seg.modulos_visibles(rol)
+    for rol in ("cliente", "junta"):
         assert "organizaciones" not in seg.modulos_visibles(rol)
 
 

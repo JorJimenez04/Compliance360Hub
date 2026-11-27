@@ -7,6 +7,7 @@ import { enviar, ErrorApi } from "@/lib/api";
 import { useDatos } from "@/lib/useDatos";
 import { fechaHora, haceCuanto } from "@/lib/formato";
 import { cn } from "@/lib/cn";
+import { usePuedeGestionar } from "@/lib/sesion";
 
 export interface ArchivoDoc {
   id: number; id_beneficiario: string | null; codigo: string | null; nombre_archivo: string; ruta: string | null;
@@ -43,7 +44,9 @@ export function AsignarArchivo({ a, documentos, permitidos, onHecho }: {
   a: ArchivoDoc; documentos: Record<string, string>; permitidos?: string[]; onHecho: () => void;
 }) {
   const [trabajando, setTrabajando] = useState(false);
+  const puede = usePuedeGestionar();
   const opciones = Object.entries(documentos).filter(([c]) => !permitidos || permitidos.includes(c));
+  if (!puede) return <span className="text-xs text-texto-3">{a.codigo ? documentos[a.codigo] : "Sin asignar"}</span>;
   return (
     <Selector aria-label={`Tipo de documento de ${a.nombre_archivo}`} className="h-8 w-60 text-xs" disabled={trabajando}
       value={a.codigo ?? ""} onChange={async (e) => {
@@ -87,6 +90,7 @@ export default function DocumentacionPropia({ clienteId, enlace, onGuardado }: {
   useEffect(() => setUrl(enlace ?? ""), [enlace]);
   const [trabajando, setTrabajando] = useState<"guardar" | "revisar" | null>(null);
   const [aviso, setAviso] = useState<{ ok: boolean; mensaje: string } | null>(null);
+  const puede = usePuedeGestionar();
 
   async function guardar() {
     setTrabajando("guardar"); setAviso(null);
@@ -110,13 +114,13 @@ export default function DocumentacionPropia({ clienteId, enlace, onGuardado }: {
       <Tarjeta>
         <TituloTarjeta titulo="Carpeta del cliente en OneDrive"
           descripcion="Pegue el enlace de su carpeta. Dentro, la plataforma lee «Documentación corporativa» y «Beneficiarios». Se revisa con cada sincronización o con el botón."
-          accion={e?.carpeta.enlace && <Boton className="whitespace-nowrap" cargando={trabajando === "revisar"} onClick={revisar}><RefreshCw className="size-4" aria-hidden />Revisar OneDrive</Boton>} />
+          accion={puede && e?.carpeta.enlace && <Boton className="whitespace-nowrap" cargando={trabajando === "revisar"} onClick={revisar}><RefreshCw className="size-4" aria-hidden />Revisar OneDrive</Boton>} />
         <div className="space-y-3 px-5 pb-5 pt-3">
           <div className="flex flex-wrap items-end gap-2">
             <div className="min-w-[320px] flex-1"><Etiqueta htmlFor="carpeta">Enlace de la carpeta</Etiqueta>
-              <Entrada id="carpeta" placeholder="https://…sharepoint.com/:f:/g/personal/…" value={url} onChange={(ev) => setUrl(ev.target.value)} /></div>
-            <Boton variante="primario" cargando={trabajando === "guardar"} disabled={(url.trim() || null) === (enlace || null)} onClick={guardar}>
-              <Save className="size-4" aria-hidden />Guardar</Boton>
+              <Entrada id="carpeta" disabled={!puede} placeholder="https://…sharepoint.com/:f:/g/personal/…" value={url} onChange={(ev) => setUrl(ev.target.value)} /></div>
+            {puede && <Boton variante="primario" cargando={trabajando === "guardar"} disabled={(url.trim() || null) === (enlace || null)} onClick={guardar}>
+              <Save className="size-4" aria-hidden />Guardar</Boton>}
           </div>
           {e?.carpeta.revisada_en && !e.carpeta.error && (
             <p className="text-xs text-texto-3"><FolderOpen className="mr-1 inline size-3.5" aria-hidden />

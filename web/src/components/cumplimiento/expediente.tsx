@@ -10,6 +10,7 @@ import { useDatos } from "@/lib/useDatos";
 import { entero, fecha, fechaHora, haceCuanto, mesCorto, moneda, monedaCorta, porcentaje } from "@/lib/formato";
 import type { Catalogo, FichaCliente, PerfilVsReal } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
+import { usePuedeGestionar } from "@/lib/sesion";
 import { Kpi } from "@/components/monitoreo/tablero";
 import ActividadYModelos from "./actividades";
 import { riesgoDe } from "./selector-modelos";
@@ -18,6 +19,7 @@ import { ListaAlertas, NOMBRE_ESTADO } from "./alertas";
 import MonitoreoCliente from "./monitoreo-cliente";
 import BeneficiariosCliente from "./beneficiarios";
 import DocumentacionPropia from "./documentacion";
+import { ContratosCliente, DocumentosAnteriores, PersonasCliente, RiesgoCliente } from "./vinculados";
 
 const PESTANAS = [
   { id: "resumen", nombre: "Resumen" },
@@ -25,6 +27,9 @@ const PESTANAS = [
   { id: "perfil", nombre: "Perfil vs. comportamiento" },
   { id: "alertas", nombre: "Alertas y casos" },
   { id: "beneficiarios", nombre: "Beneficiarios" },
+  { id: "personas", nombre: "Personas vinculadas" },
+  { id: "contratos", nombre: "Contratos" },
+  { id: "riesgo", nombre: "Riesgo" },
   { id: "expediente", nombre: "Documentación propia" },
   { id: "bitacora", nombre: "Bitácora" },
 ] as const;
@@ -68,6 +73,9 @@ function Vista({ organizacionId, clienteId }: { organizacionId: number; clienteI
       {pestana === "resumen" ? <Resumen f={f} cat={cat.datos} organizacionId={organizacionId} onGuardado={ficha.recargar} />
         : pestana === "monitoreo" ? <MonitoreoCliente empresas={f.empresas} />
         : pestana === "beneficiarios" ? <BeneficiariosCliente clienteId={clienteId} />
+        : pestana === "personas" ? <PersonasCliente clienteId={clienteId} />
+        : pestana === "contratos" ? <ContratosCliente clienteId={clienteId} />
+        : pestana === "riesgo" ? <RiesgoCliente clienteId={clienteId} sugerido={riesgoDe(cat.datos.modelos, f.modelos_negocio)} onCambio={ficha.recargar} />
         : pestana === "perfil" ? <Perfil f={f} onGuardado={ficha.recargar} />
         : pestana === "alertas" ? <ListaAlertas ruta={`/api/clientes/${clienteId}/alertas`} mostrarEmpresa={f.empresas.length > 1} />
         : pestana === "expediente" ? <Expediente f={f} cat={cat.datos} onGuardado={ficha.recargar} />
@@ -103,6 +111,7 @@ function Resumen({ f, cat, organizacionId, onGuardado }: { f: FichaCliente; cat:
   const [ed, setEd] = useState<Editable>(() => Object.fromEntries(CAMPOS.map((c) => [c, f[c]])) as unknown as Editable);
   useEffect(() => setEd(Object.fromEntries(CAMPOS.map((c) => [c, f[c]])) as unknown as Editable), [f]);
   const { guardando, fallo, ok, guardar } = useGuardar(f.id, onGuardado);
+  const puede = usePuedeGestionar();
   const k = f.operacion.kpis;
   const poner = (c: Partial<Editable>) => setEd({ ...ed, ...c });
   const r = f.alertas_resumen;
@@ -142,8 +151,8 @@ function Resumen({ f, cat, organizacionId, onGuardado }: { f: FichaCliente; cat:
 
       <Tarjeta>
         <TituloTarjeta titulo="Ficha del cliente (KYC/KYB)"
-          accion={<Boton variante="primario" cargando={guardando} onClick={() => guardar({ ...ed })}><Save className="size-4" aria-hidden />Guardar</Boton>} />
-        <div className="space-y-5 px-5 pb-5 pt-3">
+          accion={puede && <Boton variante="primario" cargando={guardando} onClick={() => guardar({ ...ed, nivel_riesgo: undefined })}><Save className="size-4" aria-hidden />Guardar</Boton>} />
+        <fieldset disabled={!puede} className="space-y-5 px-5 pb-5 pt-3">
           {fallo && <Aviso tono="critico">{fallo}</Aviso>}
           {ok && <Aviso tono="ok">Ficha guardada.</Aviso>}
           <div className="grid gap-4 md:grid-cols-3">
@@ -153,12 +162,12 @@ function Resumen({ f, cat, organizacionId, onGuardado }: { f: FichaCliente; cat:
               <Selector id="c-tp" value={ed.tipo_persona} onChange={(e) => poner({ tipo_persona: e.target.value as Editable["tipo_persona"] })}>
                 <option value="juridica">Persona jurídica</option><option value="natural">Persona natural</option></Selector></div>
             <div><Etiqueta htmlFor="c-riesgo">Nivel de riesgo</Etiqueta>
-              <Selector id="c-riesgo" value={ed.nivel_riesgo} onChange={(e) => poner({ nivel_riesgo: e.target.value })}>
-                {["Sin calificar", "Alto", "Medio", "Bajo"].map((n) => <option key={n} value={n}>{n}</option>)}
-                {!["Sin calificar", "Alto", "Medio", "Bajo"].includes(ed.nivel_riesgo) && <option value={ed.nivel_riesgo}>{ed.nivel_riesgo} (anterior)</option>}
-              </Selector>
-              {sugerido && <p className="mt-1 text-xs text-texto-3">Sugerido por sus modelos: {sugerido}
-                {sugerido !== ed.nivel_riesgo && <button type="button" className="ml-2 text-acento hover:underline" onClick={() => poner({ nivel_riesgo: sugerido })}>Usar</button>}</p>}</div>
+              {/* Se califica en la pestaña Riesgo: así cada cambio lleva motivo y queda en el historial */}
+              <div className="flex h-10 items-center gap-2 rounded-lg border border-borde bg-fondo/50 px-3 text-sm">
+                <Insignia tono={tonoRiesgo(ed.nivel_riesgo)}>{ed.nivel_riesgo}</Insignia>
+                <Link href="?tab=riesgo" className="ml-auto text-xs text-acento hover:underline">Calificar</Link>
+              </div>
+              {sugerido && <p className="mt-1 text-xs text-texto-3">Sugerido por sus modelos: {sugerido}</p>}</div>
             <div><Etiqueta htmlFor="c-est">Estado</Etiqueta>
               <Selector id="c-est" value={ed.estado} onChange={(e) => poner({ estado: e.target.value })}>
                 {["Prospecto", "Activo", "Suspendido", "Terminado"].map((n) => <option key={n} value={n}>{n}</option>)}</Selector></div>
@@ -172,7 +181,7 @@ function Resumen({ f, cat, organizacionId, onGuardado }: { f: FichaCliente; cat:
           <div><Etiqueta htmlFor="c-notas">Notas internas</Etiqueta>
             <textarea id="c-notas" rows={3} value={ed.notas ?? ""} onChange={(e) => poner({ notas: e.target.value })}
               className="w-full rounded-lg border border-borde-fuerte bg-fondo px-3 py-2 text-sm text-texto focus:border-acento focus:outline-none" /></div>
-        </div>
+        </fieldset>
       </Tarjeta>
     </div>
   );
@@ -186,6 +195,7 @@ function Perfil({ f, onGuardado }: { f: FichaCliente; onGuardado: () => void }) 
   const [tkt, setTkt] = useState(f.perfil_ticket_promedio?.toString() ?? "");
   const [paises, setPaises] = useState(f.perfil_paises.join(", "));
   const { guardando, fallo, ok, guardar } = useGuardar(f.id, () => { onGuardado(); datos.recargar(); });
+  const puede = usePuedeGestionar();
   const num = (s: string) => (s.trim() === "" ? null : Number(s));
 
   const celda = (v: number | null) => v == null ? <span className="text-texto-3">—</span>
@@ -195,9 +205,9 @@ function Perfil({ f, onGuardado }: { f: FichaCliente; onGuardado: () => void }) 
     <div className="space-y-5">
       <Tarjeta>
         <TituloTarjeta titulo="Perfil transaccional declarado" descripcion={f.perfil_actualizado ? `Actualizado el ${fecha(f.perfil_actualizado)}` : "Lo que el cliente informó al vincularse. Se compara mes a mes con lo que realmente transa."}
-          accion={<Boton variante="primario" cargando={guardando} onClick={() => guardar({ perfil_volumen_mensual: num(vol), perfil_operaciones_mes: num(ops),
+          accion={puede && <Boton variante="primario" cargando={guardando} onClick={() => guardar({ perfil_volumen_mensual: num(vol), perfil_operaciones_mes: num(ops),
             perfil_ticket_promedio: num(tkt), perfil_paises: paises.split(",").map((p) => p.trim()).filter(Boolean) })}><Save className="size-4" aria-hidden />Guardar perfil</Boton>} />
-        <div className="space-y-3 px-5 pb-5 pt-3">
+        <fieldset disabled={!puede} className="space-y-3 px-5 pb-5 pt-3">
           {fallo && <Aviso tono="critico">{fallo}</Aviso>}
           {ok && <Aviso tono="ok">Perfil guardado. Las próximas evaluaciones del monitoreo lo usan para alertar desviaciones.</Aviso>}
           <div className="grid gap-4 md:grid-cols-4">
@@ -206,7 +216,7 @@ function Perfil({ f, onGuardado }: { f: FichaCliente; onGuardado: () => void }) 
             <div><Etiqueta htmlFor="p-tkt">Ticket promedio (COP)</Etiqueta><Entrada id="p-tkt" type="number" min={0} value={tkt} onChange={(e) => setTkt(e.target.value)} /></div>
             <div><Etiqueta htmlFor="p-pais">Países (separados por coma)</Etiqueta><Entrada id="p-pais" value={paises} onChange={(e) => setPaises(e.target.value)} /></div>
           </div>
-        </div>
+        </fieldset>
       </Tarjeta>
       <Tarjeta>
         <TituloTarjeta titulo="Comportamiento real frente al declarado" descripcion="Veces el valor declarado. Más de 1,5× genera una alerta de desviación de perfil." />
@@ -242,6 +252,7 @@ function Expediente({ f, cat, onGuardado }: { f: FichaCliente; cat: Catalogo; on
   return (
     <div className="space-y-5">
       <DocumentacionPropia clienteId={f.id} enlace={f.carpeta_onedrive} onGuardado={onGuardado} />
+      <DocumentosAnteriores clienteId={f.id} />
       <div>
         <button type="button" onClick={() => setVerCatalogo(!verCatalogo)} className="text-sm text-acento hover:underline">
           {verCatalogo ? "Ocultar" : "Ver"} la referencia del catálogo (paquete completo según modelo de negocio y riesgo)</button>

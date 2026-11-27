@@ -193,7 +193,7 @@ def check_active_session() -> bool:
             return False
 
         # Una cookie de un rol externo («cliente», «junta») nunca abre esta app (ver autenticación por BD)
-        if payload.get("rol") in ("cliente", "junta"):
+        if payload.get("rol") in ("cliente", "junta", "director_cumplimiento"):
             return False
 
         # Restaurar sesión desde el payload firmado (HMAC ya verificado arriba)
@@ -316,7 +316,9 @@ def authenticate(username: str, password: str) -> dict | None:
         # Los usuarios externos (cliente, junta) entran solo por la nueva interfaz, que los limita
         # a SU organización; esta app tiene módulos internos con datos de todas, así que se les
         # niega aquí aunque la clave sea correcta.
-        if row["rol"] in ("cliente", "junta"):
+        # El director de cumplimiento entra solo a la nueva interfaz: allí ve todo en solo lectura,
+        # y esta app no tiene ese modo.
+        if row["rol"] in ("cliente", "junta", "director_cumplimiento"):
             return None
 
         stored_hash: str = row["password_hash"]

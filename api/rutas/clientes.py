@@ -22,6 +22,7 @@ from core.cumplimiento import beneficiarios as bf
 from core.cumplimiento import documentos as dc
 from core.cumplimiento import catalogo as cat
 from core.cumplimiento import clientes as cl
+from core.cumplimiento import vinculados as vc
 from core.monitoreo_tx.config import ROLES_CARGA, ROLES_MONITOREO
 
 router = APIRouter(tags=["clientes y alertas"])
@@ -169,7 +170,7 @@ def cambiar_cliente(cliente_id: int, datos: CambioCliente, request: Request, u: 
     antes = _cliente(cliente_id)
     cambios = datos.model_dump(exclude_unset=True)
     try:
-        cl.actualizar(_engine(), cliente_id, cambios)
+        cl.actualizar(_engine(), cliente_id, cambios, u.username)
     except cl.ErrorCliente as e:
         raise HTTPException(400, str(e))
     except Exception as e:                      # NIT repetido dentro de la organización
@@ -276,6 +277,135 @@ def cerrar_expediente(cliente_id: int, id_beneficiario: str, request: Request, u
     seg.auditar(u, "UPDATE", "clientes", f"Expediente del beneficiario {id_beneficiario} cerrado "
                 f"(cliente «{f['razon_social']}»)", entidad_id=cliente_id, ip=seg.ip_cliente(request))
     return {"ok": True}
+
+
+# =========================
+# Personas vinculadas, contratos y calificación de riesgo (migrados de la app anterior)
+# =========================
+class Persona(BaseModel):
+    nombre_completo: str | None = Field(None, max_length=200)
+    tipo_documento: str | None = Field(None, max_length=20)
+    numero_documento: str | None = Field(None, max_length=40)
+    nacionalidad: str | None = Field(None, max_length=80)
+    rol: str | None = Field(None, max_length=40)
+    pct_participacion: float | None = None
+    es_pep: bool | None = None
+    en_listas_restriccion: bool | None = None
+    fecha_verificacion: date | None = None
+    notas: str | None = Field(None, max_length=2000)
+    activo: bool | None = None
+
+
+def _vinculado(fn):
+    try:
+        return fn()
+    except vc.ErrorVinculado as e:
+        raise HTTPException(400, str(e))
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.get("/api/clientes/{cliente_id}/personas")
+def personas(cliente_id: int, todas: bool = False, u: seg.Usuario = Depends(interno)) -> dict:
+    _cliente(cliente_id)
+    lista = vc.listar_personas(_engine(), cliente_id, todas)
+    return _json({"personas": lista, "resumen": vc.resumen_personas(lista), "roles": vc.ROLES_PERSONA,
+                  "tipos_documento": vc.TIPOS_DOCUMENTO})
+
+
+@router.post("/api/clientes/{cliente_id}/personas", status_code=201)
+def crear_persona(cliente_id: int, datos: Persona, request: Request, u: seg.Usuario = Depends(gestion)) -> dict:
+    f = _cliente(cliente_id)
+    d = datos.model_dump(exclude_unset=True)
+    pid = _vinculado(lambda: vc.crear_persona(_engine(), cliente_id, d, u.username))
+    seg.auditar(u, "CREATE", "clientes", f"Persona vinculada «{d.get('nombre_completo')}» ({d.get('rol')}) agregada a "
+                f"«{f['razon_social']}»", entidad_id=cliente_id, ip=seg.ip_cliente(request), valores_nuevos=_json(d))
+    return {"id": pid}
+
+
+@router.patch("/api/clientes/{cliente_id}/personas/{persona_id}")
+def cambiar_persona(cliente_id: int, persona_id: int, datos: Persona, request: Request,
+                    u: seg.Usuario = Depends(gestion)) -> dict:
+    _cliente(cliente_id)
+    d = datos.model_dump(exclude_unset=True)
+    r = _vinculado(lambda: vc.actualizar_persona(_engine(), cliente_id, persona_id, d))
+    accion = "retirada" if d.get("activo") is False else "reactivada" if d.get("activo") else "actualizada"
+    seg.auditar(u, "UPDATE", "clientes", f"Persona vinculada «{r['nombre']}» {accion}", entidad_id=cliente_id,
+                ip=seg.ip_cliente(request), valores_nuevos=_json(d))
+    return {"ok": True}
+
+
+class Contrato(BaseModel):
+    empresa_grupo: str = Field(max_length=40)
+    estado: str | None = None
+    fecha_inicio: date | None = None
+    fecha_vencimiento: date | None = None
+    contrato_firmado: bool | None = None
+    fecha_firma: date | None = None
+    numero_contrato: str | None = Field(None, max_length=60)
+    contacto_operativo: str | None = Field(None, max_length=120)
+    email_operativo: str | None = Field(None, max_length=120)
+    telefono_operativo: str | None = Field(None, max_length=40)
+    contacto_compliance: str | None = Field(None, max_length=120)
+    email_compliance: str | None = Field(None, max_length=120)
+    sla_contratado: str | None = Field(None, max_length=200)
+    volumen_mensual_cop: int | None = None
+    num_transacciones_mes: int | None = None
+    notas: str | None = Field(None, max_length=2000)
+    servicios: list[str] | None = Field(None, max_length=10)
+
+
+@router.get("/api/clientes/{cliente_id}/contratos")
+def contratos(cliente_id: int, u: seg.Usuario = Depends(interno)) -> dict:
+    _cliente(cliente_id)
+    return _json({"contratos": vc.listar_contratos(_engine(), cliente_id), "empresas": vc.EMPRESAS_GRUPO,
+                  "estados": vc.ESTADOS_CONTRATO, "servicios": vc.SERVICIOS})
+
+
+@router.post("/api/clientes/{cliente_id}/contratos")
+def guardar_contrato(cliente_id: int, datos: Contrato, request: Request, u: seg.Usuario = Depends(gestion)) -> dict:
+    f = _cliente(cliente_id)
+    d = datos.model_dump(exclude_unset=True)
+    empresa = d.pop("empresa_grupo")
+    cid = _vinculado(lambda: vc.guardar_contrato(_engine(), cliente_id, empresa, d, u.username))
+    seg.auditar(u, "UPDATE", "clientes", f"Contrato con {empresa} de «{f['razon_social']}» actualizado"
+                + (f" (servicios: {', '.join(d['servicios']) or 'ninguno'})" if "servicios" in d else ""),
+                entidad_id=cliente_id, ip=seg.ip_cliente(request), valores_nuevos=_json(d))
+    return {"id": cid}
+
+
+class Calificacion(BaseModel):
+    nivel: str
+    puntaje: int | None = Field(None, ge=0, le=100)
+    motivo: str = Field(max_length=1000)
+    observaciones: str | None = Field(None, max_length=2000)
+    proxima_revision: date | None = None
+
+
+@router.get("/api/clientes/{cliente_id}/riesgo")
+def riesgo(cliente_id: int, u: seg.Usuario = Depends(interno)) -> dict:
+    f = _cliente(cliente_id)
+    return _json({"nivel_actual": f["nivel_riesgo"], "puntaje_actual": f.get("puntaje_riesgo"),
+                  "fecha_ultima_calificacion": f.get("fecha_ultima_calificacion"), "proxima_revision": f.get("proxima_revision"),
+                  "riesgo_sugerido": f.get("riesgo_sugerido"), "niveles": vc.NIVELES,
+                  "historial": vc.historial_riesgo(_engine(), cliente_id)})
+
+
+@router.post("/api/clientes/{cliente_id}/riesgo", status_code=201)
+def calificar(cliente_id: int, datos: Calificacion, request: Request, u: seg.Usuario = Depends(gestion)) -> dict:
+    f = _cliente(cliente_id)
+    _vinculado(lambda: vc.calificar(_engine(), cliente_id, datos.nivel, datos.puntaje, datos.motivo,
+                                    datos.observaciones, u.username, datos.proxima_revision))
+    seg.auditar(u, "UPDATE", "clientes", f"Riesgo de «{f['razon_social']}» calificado: {f['nivel_riesgo']} → {datos.nivel}"
+                f"{f' (puntaje {datos.puntaje})' if datos.puntaje is not None else ''}. Motivo: {datos.motivo.strip()}",
+                entidad_id=cliente_id, ip=seg.ip_cliente(request))
+    return {"ok": True}
+
+
+@router.get("/api/clientes/{cliente_id}/documentos-anteriores")
+def documentos_anteriores(cliente_id: int, u: seg.Usuario = Depends(interno)) -> dict:
+    _cliente(cliente_id)
+    return _json({"documentos": vc.documentos_anteriores(_engine(), cliente_id)})
 
 
 # =========================

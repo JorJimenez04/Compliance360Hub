@@ -9,6 +9,7 @@ import { useDatos } from "@/lib/useDatos";
 import { entero, fecha, fechaHora, moneda, monedaCorta, porcentaje } from "@/lib/formato";
 import { cn } from "@/lib/cn";
 import { Kpi } from "@/components/monitoreo/tablero";
+import { usePuedeGestionar } from "@/lib/sesion";
 
 interface Beneficiario {
   id_beneficiario: string; nombre: string | null; otros_nombres: string[]; tipo_identificacion: string | null;
@@ -48,6 +49,7 @@ function Expedientes({ clienteId, datos, recargar }: { clienteId: number; datos:
   const [abierto, setAbierto] = useState<string | null>(null);
   const [aviso, setAviso] = useState<{ ok: boolean; mensaje: string } | null>(null);
   const [revisando, setRevisando] = useState(false);
+  const puede = usePuedeGestionar();
   const cerrar = async (idb: string) => {
     if (!window.confirm("¿Cerrar el expediente de este beneficiario? Sus archivos en OneDrive no se tocan.")) return;
     try { await enviar(`/api/clientes/${clienteId}/expedientes-beneficiarios/${encodeURIComponent(idb)}`, {}, "DELETE"); await recargar(); }
@@ -58,7 +60,7 @@ function Expedientes({ clienteId, datos, recargar }: { clienteId: number; datos:
     <Tarjeta>
       <TituloTarjeta titulo={`Expedientes documentales · ${datos.completos} de ${datos.expedientes.length} completos`}
         descripcion="Los 10 beneficiarios más representativos por monto, más los que agregue. Sus documentos se leen de «Beneficiarios/{documento} - {nombre}» dentro de la carpeta del cliente."
-        accion={datos.con_carpeta_cliente && <Boton className="whitespace-nowrap" cargando={revisando} onClick={async () => {
+        accion={puede && datos.con_carpeta_cliente && <Boton className="whitespace-nowrap" cargando={revisando} onClick={async () => {
           setRevisando(true); setAviso(await revisarCarpeta(clienteId)); await recargar(); setRevisando(false);
         }}><RefreshCw className="size-4" aria-hidden />Revisar OneDrive</Boton>} />
       <div className="space-y-3 px-5 pb-5 pt-2">
@@ -86,14 +88,14 @@ function Expedientes({ clienteId, datos, recargar }: { clienteId: number; datos:
                     <td className="py-2 text-texto-2">{ORIGEN[e.origen]}</td>
                     <td className="py-2">{e.carpeta_nombre ? <span className="text-texto-2">{e.carpeta_nombre}</span>
                       : <span className="inline-flex flex-wrap items-center gap-1.5 text-xs"><FolderPlus className="size-3.5 text-alerta" aria-hidden />
-                          <span className="text-alerta">Crear:</span><span className="font-mono text-texto-2">{e.carpeta_sugerida}</span><Copiar texto={e.carpeta_sugerida} /></span>}</td>
+                          <span className="text-alerta">{puede ? "Crear:" : "Sin carpeta:"}</span><span className="font-mono text-texto-2">{e.carpeta_sugerida}</span>{puede && <Copiar texto={e.carpeta_sugerida} />}</span>}</td>
                     <td className="py-2">
                       <div className="flex flex-wrap gap-1">
                         {e.requisitos.map((r) => <Insignia key={r.codigo} tono={r.cargado ? "ok" : "neutro"}>{r.cargado ? "✓" : "✗"} {r.nombre}</Insignia>)}
                       </div>
                     </td>
-                    <td className="py-2"><button type="button" onClick={() => cerrar(e.id_beneficiario)} title="Cerrar expediente"
-                      className="text-texto-3 hover:text-critico"><X className="size-4" /></button></td>
+                    <td className="py-2">{puede && <button type="button" onClick={() => cerrar(e.id_beneficiario)} title="Cerrar expediente"
+                      className="text-texto-3 hover:text-critico"><X className="size-4" /></button>}</td>
                   </tr>
                   {ver && (
                     <tr className="bg-fondo/40"><td /><td colSpan={5} className="pb-3">
@@ -154,6 +156,7 @@ export default function BeneficiariosCliente({ clienteId }: { clienteId: number 
   const exp = useDatos<RespuestaExp>(`/api/clientes/${clienteId}/expedientes-beneficiarios`);
   const conExpediente = useMemo(() => new Set((exp.datos?.expedientes ?? []).map((e) => e.id_beneficiario)), [exp.datos]);
   const [abriendo, setAbriendo] = useState<string | null>(null);
+  const puede = usePuedeGestionar();
   const abrirExpediente = async (idb: string) => {
     setAbriendo(idb);
     try { await enviar(`/api/clientes/${clienteId}/expedientes-beneficiarios`, { id_beneficiario: idb }); await exp.recargar(); }
@@ -231,7 +234,7 @@ export default function BeneficiariosCliente({ clienteId }: { clienteId: number 
                       </td>
                       <td className="px-2 py-2.5" onClick={(ev) => ev.stopPropagation()}>
                         {conExpediente.has(b.id_beneficiario) ? <span className="text-xs text-ok">Abierto</span>
-                          : <button type="button" disabled={abriendo === b.id_beneficiario} onClick={() => abrirExpediente(b.id_beneficiario)}
+                          : !puede ? <span className="text-xs text-texto-3">—</span> : <button type="button" disabled={abriendo === b.id_beneficiario} onClick={() => abrirExpediente(b.id_beneficiario)}
                               className="whitespace-nowrap text-xs text-acento hover:underline disabled:opacity-50">+ Abrir</button>}
                       </td>
                     </tr>

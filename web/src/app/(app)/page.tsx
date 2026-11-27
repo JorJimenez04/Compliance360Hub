@@ -6,7 +6,7 @@ import { useSesion } from "@/lib/sesion";
 
 // Cada perfil aterriza en su primer módulo: la junta en su tablero, el resto en Monitoreo.
 const RUTAS: Record<string, string> = {
-  junta: "/junta", monitoreo: "/monitoreo", catalogo: "/catalogo", organizaciones: "/organizaciones", usuarios: "/usuarios",
+  junta: "/junta", monitoreo: "/monitoreo", catalogo: "/catalogo", organizaciones: "/organizaciones", usuarios: "/usuarios", auditoria: "/auditoria",
 };
 
 export default function Inicio() {

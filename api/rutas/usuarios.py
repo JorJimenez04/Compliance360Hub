@@ -28,7 +28,7 @@ from core.monitoreo_tx.config import ALCANCE_EMPRESAS, ALCANCE_ORGANIZACION
 router = APIRouter(prefix="/api/usuarios", tags=["usuarios"])
 
 ROL_CLIENTE = "cliente"
-ROLES_GESTIONADOS = ("cliente", "junta", "compliance")
+ROLES_GESTIONADOS = ("cliente", "junta", "compliance", "director_cumplimiento")
 ROLES_ADMIN_USUARIOS = frozenset({"super_admin"})
 solo_super_admin = seg.requiere_roles(ROLES_ADMIN_USUARIOS)
 
@@ -92,12 +92,12 @@ def _validar_empresas(conn, organizacion_id: int, empresas: list[int]) -> None:
 
 def _reglas_de_perfil(rol: str, organizacion_id: int | None, alcance: str | None, empresas: list[int]) -> None:
     if rol not in ROLES_GESTIONADOS:
-        raise HTTPException(400, "Perfil no válido. Use cliente, junta o compliance.")
+        raise HTTPException(400, "Perfil no válido. Use cliente, junta, compliance o director_cumplimiento.")
     if rol in ("cliente", "junta"):
         if organizacion_id is None:
             raise HTTPException(400, "Indique la organización del usuario.")
     elif organizacion_id is not None:
-        raise HTTPException(400, "El equipo interno (compliance) no pertenece a una organización.")
+        raise HTTPException(400, "El equipo interno (compliance y director) no pertenece a una organización.")
     if rol == "cliente":
         # Decisión 2026-11-23: los clientes de los clientes no tienen acceso. Un usuario «cliente» es
         # siempre del equipo de la organización y ve toda su operación (nunca el compliance interno).

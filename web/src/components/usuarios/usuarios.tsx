@@ -14,6 +14,7 @@ const PERFILES: Record<PerfilGestionado, { nombre: string; descripcion: string }
   cliente: { nombre: "Cliente", descripcion: "Equipo de la organización. Solo lectura: monitoreo y estado de su cumplimiento." },
   junta: { nombre: "Junta directiva", descripcion: "Tablero ejecutivo de su organización, sin datos personales." },
   compliance: { nombre: "Compliance (equipo interno)", descripcion: "Su equipo. Opera todas las organizaciones; no pertenece a ninguna." },
+  director_cumplimiento: { nombre: "Director de cumplimiento", descripcion: "Responsable del compliance del grupo. Ve todas las organizaciones en solo lectura; no pertenece a ninguna." },
 };
 
 interface Resultado { username: string; clave_temporal: string; titulo: string }
@@ -37,7 +38,7 @@ export default function Usuarios() {
 
   if (!esSuper) return <p className="text-sm text-texto-3">Su rol no tiene acceso a esta sección.</p>;
 
-  const externo = form.rol !== "compliance";
+  const externo = form.rol === "cliente" || form.rol === "junta";
   const listo = form.username.trim().length >= 3 && form.nombre.trim().length >= 2 && form.email.includes("@")
     && (!externo || form.organizacion_id);
 

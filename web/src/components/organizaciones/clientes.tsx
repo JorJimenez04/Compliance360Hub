@@ -10,6 +10,7 @@ import { entero, fecha } from "@/lib/formato";
 import type { ClienteFila, EmpresaSinCliente } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
 import NuevoCliente from "./nuevo-cliente";
+import { usePuedeGestionar } from "@/lib/sesion";
 
 export default function ClientesOrganizacion({ organizacionId }: { organizacionId: number }) {
   const { datos, error, recargar } = useDatos<{ clientes: ClienteFila[]; empresas_sin_cliente: EmpresaSinCliente[] }>(
@@ -20,6 +21,7 @@ export default function ClientesOrganizacion({ organizacionId }: { organizacionI
   const [aviso, setAviso] = useState<string | null>(null);
   const [fallo, setFallo] = useState<string | null>(null);
   const [nuevo, setNuevo] = useState(false);
+  const puede = usePuedeGestionar();
 
   async function crear() {
     setTrabajando("crear"); setFallo(null); setAviso(null);
@@ -58,7 +60,7 @@ export default function ClientesOrganizacion({ organizacionId }: { organizacionI
         <Tarjeta className="border-alerta/30">
           <TituloTarjeta titulo={`${pendientes.length} empresas monitoreadas sin ficha de cliente`}
             descripcion="Se crearon solas al cargar transacciones. Cree su ficha para gestionar su compliance."
-            accion={<Boton variante="primario" cargando={trabajando === "crear"} disabled={!marcadas.length} onClick={crear}>
+            accion={puede && <Boton variante="primario" cargando={trabajando === "crear"} disabled={!marcadas.length} onClick={crear}>
               <UserPlus className="size-4" aria-hidden />Crear {marcadas.length || ""} clientes</Boton>} />
           <div className="space-y-3 px-5 pb-5 pt-3">
             <button className="text-[13px] text-acento hover:underline" onClick={() => setMarcadas(marcadas.length === pendientes.length ? [] : pendientes.map((e) => e.id))}>
@@ -83,8 +85,8 @@ export default function ClientesOrganizacion({ organizacionId }: { organizacionI
         <TituloTarjeta titulo="Clientes" descripcion="Haga clic en un cliente para abrir su expediente 360."
           accion={<div className="flex gap-2">
             <Entrada aria-label="Buscar cliente" placeholder="Buscar por nombre o NIT…" className="w-56" value={buscar} onChange={(e) => setBuscar(e.target.value)} />
-            <Boton cargando={trabajando === "evaluar"} onClick={evaluar} title="Revisa los últimos 3 meses de cada empresa"><RefreshCw className="size-4" aria-hidden />Evaluar monitoreo</Boton>
-            {!nuevo && <Boton variante="primario" onClick={() => setNuevo(true)}><Plus className="size-4" aria-hidden />Nuevo cliente</Boton>}
+            {puede && <Boton cargando={trabajando === "evaluar"} onClick={evaluar} title="Revisa los últimos 3 meses de cada empresa"><RefreshCw className="size-4" aria-hidden />Evaluar monitoreo</Boton>}
+            {puede && !nuevo && <Boton variante="primario" onClick={() => setNuevo(true)}><Plus className="size-4" aria-hidden />Nuevo cliente</Boton>}
           </div>} />
         {!clientes.length ? <Vacio icono={<Users className="size-8" />} titulo={datos.clientes.length ? "Ningún cliente coincide" : "Aún no hay clientes"}
           texto={datos.clientes.length ? undefined : "Créelos desde las empresas monitoreadas o con «Nuevo cliente»."} />

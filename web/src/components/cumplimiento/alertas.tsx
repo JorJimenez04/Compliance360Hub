@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Clock, ShieldAlert, X } from "lucide-react
 import { Aviso, Boton, Esqueleto, Etiqueta, Insignia, Selector, Tarjeta, TituloTarjeta, Vacio } from "@/components/ui/basicos";
 import { enviar, ErrorApi } from "@/lib/api";
 import { useDatos } from "@/lib/useDatos";
+import { usePuedeGestionar } from "@/lib/sesion";
 import { fecha, fechaHora, mesCorto } from "@/lib/formato";
 import type { AlertaCaso, AlertaDetalle, EstadoAlerta, Prioridad } from "@/lib/tipos";
 import { cn } from "@/lib/cn";
@@ -85,6 +86,7 @@ export function ListaAlertas({ ruta, mostrarEmpresa = true }: { ruta: string; mo
 }
 
 function PanelAlerta({ id, onCerrar, onCambio }: { id: number; onCerrar: () => void; onCambio: () => void }) {
+  const puede = usePuedeGestionar();      // el director de cumplimiento solo consulta
   const { datos: a, error, recargar } = useDatos<AlertaDetalle>(`/api/alertas/${id}`);
   const analistas = useDatos<{ analistas: { id: number; nombre: string }[] }>("/api/alertas/analistas");
   const [destino, setDestino] = useState<EstadoAlerta | "">("");
@@ -118,6 +120,7 @@ function PanelAlerta({ id, onCerrar, onCambio }: { id: number; onCerrar: () => v
         {a.justificacion && <Aviso tono="acento" titulo={`Decisión de ${a.decidida_por} · ${fechaHora(a.decidida_en)}`}>{a.justificacion}</Aviso>}
         {fallo && <Aviso tono="critico">{fallo}</Aviso>}
 
+        {puede && (<>
         <div className="grid gap-3 sm:grid-cols-2">
           <div><Etiqueta htmlFor="analista">Analista</Etiqueta>
             <Selector id="analista" disabled={guardando} value={a.analista_id ?? ""}
@@ -150,6 +153,8 @@ function PanelAlerta({ id, onCerrar, onCambio }: { id: number; onCerrar: () => v
             <Boton cargando={guardando} disabled={!texto.trim()} onClick={() => enviarCambio({ nota: texto })}>Agregar nota</Boton>
           )}
         </div>
+
+        </>)}
 
         <div>
           <p className="mb-2 text-[13px] font-medium text-texto-2">Trazabilidad</p>
