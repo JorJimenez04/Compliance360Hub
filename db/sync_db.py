@@ -79,6 +79,7 @@ ALL_MIGRATIONS: list[str] = [
     "043_rol_director_cumplimiento.sql",
     "044_eliminar_perfiles_anteriores.sql",
     "045_aliados_bancarios.sql",
+    "046_requerimientos.sql",
 ]
 
 # Tablas / columnas a validar tras las migraciones
@@ -95,6 +96,8 @@ VALIDATION_QUERIES: list[tuple[str, str]] = [
     ("cmp_alertas",       "SELECT COUNT(*) FROM cmp_alertas"),
     ("clientes.actividades_ciiu (col)", "SELECT actividades_ciiu FROM clientes LIMIT 1"),
     ("cmp_documentos",    "SELECT COUNT(*) FROM cmp_documentos"),
+    ("org_aliados",       "SELECT COUNT(*) FROM org_aliados"),
+    ("requerimientos",    "SELECT COUNT(*) FROM requerimientos"),
     ("usuarios.organizacion_id (col)", "SELECT organizacion_id, alcance FROM usuarios LIMIT 1"),
 ]
 

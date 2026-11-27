@@ -16,6 +16,7 @@ import ActividadYModelos from "./actividades";
 import { riesgoDe } from "./selector-modelos";
 import VistaPaquete from "./paquete";
 import { ListaAlertas, NOMBRE_ESTADO } from "./alertas";
+import { RequerimientosRelacionados } from "@/components/organizaciones/requerimientos";
 import MonitoreoCliente from "./monitoreo-cliente";
 import BeneficiariosCliente from "./beneficiarios";
 import DocumentacionPropia from "./documentacion";
@@ -30,6 +31,7 @@ const PESTANAS = [
   { id: "personas", nombre: "Personas vinculadas" },
   { id: "contratos", nombre: "Contratos" },
   { id: "riesgo", nombre: "Riesgo" },
+  { id: "requerimientos", nombre: "Requerimientos" },
   { id: "expediente", nombre: "Documentación propia" },
   { id: "bitacora", nombre: "Bitácora" },
 ] as const;
@@ -77,6 +79,8 @@ function Vista({ organizacionId, clienteId }: { organizacionId: number; clienteI
         : pestana === "contratos" ? <ContratosCliente clienteId={clienteId} />
         : pestana === "riesgo" ? <RiesgoCliente clienteId={clienteId} sugerido={riesgoDe(cat.datos.modelos, f.modelos_negocio)} onCambio={ficha.recargar} />
         : pestana === "perfil" ? <Perfil f={f} onGuardado={ficha.recargar} />
+        : pestana === "requerimientos" ? <RequerimientosRelacionados ruta={`/api/clientes/${clienteId}/requerimientos`} organizacionId={organizacionId}
+            prellenar={`cliente:${clienteId}`} titulo="Requerimientos de este cliente" vacio="No hay requerimientos dirigidos a este cliente." />
         : pestana === "alertas" ? <ListaAlertas ruta={`/api/clientes/${clienteId}/alertas`} mostrarEmpresa={f.empresas.length > 1} />
         : pestana === "expediente" ? <Expediente f={f} cat={cat.datos} onGuardado={ficha.recargar} />
         : <Bitacora clienteId={clienteId} />}
