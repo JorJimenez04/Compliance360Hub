@@ -64,21 +64,27 @@ def listar(u: seg.Usuario = Depends(solo_super_admin)) -> dict:
     } for f in filas], "internos": _internos()}
 
 
-ROLES_INTERNOS = ("super_admin", "admin")
 NOMBRE_ROL = {"super_admin": "Super admin", "admin": "Admin", "cliente": "Cliente", "junta": "Junta",
-              "compliance": "Compliance", "director_cumplimiento": "Director de cumplimiento"}
+              "compliance": "Compliance", "director_cumplimiento": "Director de cumplimiento",
+              # Perfiles de la app anterior (Streamlit): siguen en la base pero no se gestionan aquí
+              "manager_ops": "Gerente de operaciones (app anterior)", "manager_comercial": "Gerente comercial (app anterior)",
+              "manager_legal": "Gerente legal (app anterior)", "agente": "Agente (app anterior)",
+              "cic": "Inteligencia comercial (app anterior)", "comercial": "Comercial (app anterior)",
+              "agente_kyc": "Agente KYC (app anterior)", "agente_operativo": "Agente operativo (app anterior)",
+              "consulta": "Consulta (app anterior)"}
 
 
 def _internos() -> list[dict]:
-    """Cuentas internas (super_admin, admin): se muestran para saber quién ocupa un usuario o correo,
-    pero no se gestionan desde esta pantalla."""
+    """Toda cuenta que no se gestiona aquí (super_admin, admin y perfiles de la app anterior): se muestra
+    para saber quién ocupa un usuario o correo."""
     from db.database import engine
     with engine.connect() as conn:
         filas = conn.execute(text(
             "SELECT id, username, nombre_completo, email, rol, activo, ultimo_acceso FROM usuarios "
-            "WHERE rol = ANY(:roles) ORDER BY rol DESC, nombre_completo"), {"roles": list(ROLES_INTERNOS)}).mappings().all()
+            "WHERE NOT (rol = ANY(:roles)) ORDER BY (rol = 'super_admin') DESC, (rol = 'admin') DESC, nombre_completo"),
+            {"roles": list(ROLES_GESTIONADOS)}).mappings().all()
     return [{"id": f["id"], "username": f["username"], "nombre": f["nombre_completo"] or f["username"],
-             "email": f["email"], "rol": f["rol"], "activo": bool(f["activo"]),
+             "email": f["email"], "rol": f["rol"], "perfil": NOMBRE_ROL.get(f["rol"], f["rol"]), "activo": bool(f["activo"]),
              "ultimo_acceso": _iso(f["ultimo_acceso"])} for f in filas]
 
 

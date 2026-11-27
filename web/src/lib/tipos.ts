@@ -26,9 +26,9 @@ export interface UsuarioGestionado {
   alcance: Alcance | null; empresas_ids: number[]; empresas: string;
 }
 
-/** Cuenta interna (super_admin, admin): visible para saber quién ocupa un usuario o correo; no se gestiona aquí */
+/** Cuenta que no se gestiona aquí (super_admin, admin, perfiles de la app anterior): visible para saber quién ocupa un usuario o correo */
 export interface UsuarioInterno {
-  id: number; username: string; nombre: string; email: string | null; rol: string; activo: boolean; ultimo_acceso: string | null;
+  id: number; username: string; nombre: string; email: string | null; rol: string; perfil: string; activo: boolean; ultimo_acceso: string | null;
 }
 
 export interface Empresa {

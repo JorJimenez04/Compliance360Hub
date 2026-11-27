@@ -264,7 +264,7 @@ export default function Usuarios() {
 
       {(usuarios.datos?.internos?.length ?? 0) > 0 && (
         <Tarjeta>
-          <TituloTarjeta titulo="Cuentas internas" descripcion="Administración de la plataforma. Se muestran para saber quién usa cada usuario o correo; no se editan desde aquí." />
+          <TituloTarjeta titulo="Cuentas internas" descripcion="Administración de la plataforma y perfiles de la app anterior. Se muestran para saber quién usa cada usuario o correo; no se editan desde aquí." />
           <div className="overflow-x-auto px-5 pb-4 pt-3">
             <table className="w-full min-w-[700px] text-left text-sm">
               <thead className="text-xs uppercase tracking-wider text-texto-3">
@@ -274,7 +274,7 @@ export default function Usuarios() {
                 {usuarios.datos!.internos!.map((u) => (
                   <tr key={u.id}>
                     <td className="py-3 pr-4"><p className="font-medium">{u.nombre}</p><p className="text-xs text-texto-3">{u.username} · {u.email ?? "sin correo"}</p></td>
-                    <td className="pr-4">{u.rol === "super_admin" ? "Super admin" : u.rol === "admin" ? "Admin" : u.rol}</td>
+                    <td className="pr-4">{u.perfil}</td>
                     <td className="pr-4 text-texto-3">{u.ultimo_acceso ? fechaHora(u.ultimo_acceso) : "Nunca"}</td>
                     <td className="pr-4"><Insignia tono={u.activo ? "ok" : "neutro"}>{u.activo ? "Activo" : "Inactivo"}</Insignia></td>
                     <td className="text-right"><Insignia><Lock className="size-3" aria-hidden />Solo lectura</Insignia></td>

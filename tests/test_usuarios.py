@@ -459,3 +459,16 @@ def test_pasar_de_interno_a_cliente_y_mover_de_organizacion(pg):
         assert c.execute(text("SELECT organizacion_id, alcance FROM usuarios WHERE id = :i"), {"i": uid}).one() == (None, None)
     with pytest.raises(HTTPException):
         ru.cambiar(uid, ru.CambioUsuario(rol="super_admin"), _Peticion(), JEFE)
+
+
+def test_los_perfiles_de_la_app_anterior_se_ven_y_se_nombran(pg):
+    from sqlalchemy import text
+    engine, _ = pg
+    with engine.begin() as c:
+        c.execute(text("INSERT INTO usuarios (username, nombre_completo, email, rol, password_hash, activo) "
+                       "VALUES ('viejo', 'Viejo', 'viejo@x.co', 'manager_ops', 'x', 1)"))
+    internos = {x["username"]: x for x in ru.listar(JEFE)["internos"]}
+    assert internos["viejo"]["perfil"] == "Gerente de operaciones (app anterior)"
+    with pytest.raises(HTTPException) as e:
+        _crear(dict(username="otro", nombre="Otro", email="VIEJO@x.co", rol="compliance"))
+    assert "«viejo» (Gerente de operaciones (app anterior))" in e.value.detail
