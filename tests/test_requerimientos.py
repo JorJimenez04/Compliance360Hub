@@ -34,7 +34,7 @@ def test_permisos():
     externo = seg.Usuario(9, "equipo", "E", "cliente", organizacion_id=1, alcance="organizacion")
     director = seg.Usuario(8, "dir", "D", "director_cumplimiento")
     rutas = [r for r in rr.router.routes if isinstance(r, APIRoute)]
-    assert len(rutas) == 9
+    assert len(rutas) == 11
     for r in rutas:
         dep = r.dependant.dependencies[-1].call
         with pytest.raises(HTTPException):
@@ -157,7 +157,8 @@ def test_semaforo_de_plazos(pg):
     plazos = {q["id"]: q["plazo"] for q in lista["requerimientos"]}
     assert plazos[atrasado["id"]] == "atrasado" and plazos[por_vencer["id"]] == "por_vencer"
     assert plazos[tarde["id"]] == "fuera_de_plazo"
-    assert lista["resumen"] == {"abiertos": 4, "atrasados": 1, "por_vencer": 1, "fuera_de_plazo": 1, "total": 5}
+    assert lista["resumen"] == {"abiertos": 4, "atrasados": 1, "por_vencer": 1, "fuera_de_plazo": 1, "total": 5,
+                                "sin_evidencia_respuesta": 0}
     assert lista["requerimientos"][0]["id"] == atrasado["id"]                       # abiertos y más urgentes primero
     assert lista["requerimientos"][-1]["id"] == tarde["id"]
 

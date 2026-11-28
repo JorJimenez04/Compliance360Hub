@@ -30,7 +30,7 @@ CATALOGOS = {"tipos_entidad": TIPOS_ENTIDAD, "estados": ESTADOS, "servicios": SE
 
 CAMPOS_ENTIDAD = ("nombre", "razon_social", "identificacion", "pais", "tipo_entidad", "regulado", "regulador",
                   "licencia", "sitio_web", "notas")
-CAMPOS_RELACION = ("fecha_inicio", "servicios", "monedas", "proxima_revision", "dd_fecha", "dd_nivel", "exigencias",
+CAMPOS_RELACION = ("fecha_inicio", "vence_contrato", "vence_poliza", "vence_licencia", "servicios", "monedas", "proxima_revision", "dd_fecha", "dd_nivel", "exigencias",
                    "contacto_cumplimiento", "correo_cumplimiento", "telefono_cumplimiento", "contacto_comercial",
                    "correo_comercial", "notas")
 MOTIVO_MINIMO = 10
@@ -103,6 +103,8 @@ _SELECT = """
            r.nivel_riesgo, r.proxima_revision, r.dd_estado, r.dd_fecha, r.dd_nivel, r.exigencias,
            r.contacto_cumplimiento, r.correo_cumplimiento, r.telefono_cumplimiento, r.contacto_comercial,
            r.correo_comercial, r.notas, r.origen_aliado_id, r.actualizado_en,
+           r.vence_contrato, r.vence_poliza, r.vence_licencia, r.carpeta_item_id, r.carpeta_web_url, r.carpeta_nombre,
+           r.carpeta_revisada_en,
            b.nombre, b.razon_social, b.identificacion, b.pais, b.tipo_entidad, b.regulado, b.regulador,
            b.licencia, b.sitio_web, b.notas AS notas_entidad,
            (SELECT count(*) FROM org_aliados x WHERE x.aliado_id = b.id) AS organizaciones
@@ -110,9 +112,18 @@ _SELECT = """
 """
 
 
-def _avisos(r: dict, hoy: date) -> list[dict]:
+def _avisos(r: dict, hoy: date, documentos: dict | None = None) -> list[dict]:
     """Lo que el oficial debe atender en esta relación (sirve también para el tablero)."""
     a: list[dict] = []
+    if documentos and r["estado"] != "terminado":
+        for f in documentos["filas"]:
+            if f["estado_vence"] == "vencido":
+                a.append({"tono": "critico", "texto": f"{f['nombre']}: venció el {f['vence'].isoformat()}"})
+            elif f["estado_vence"] == "por_vencer":
+                a.append({"tono": "alerta", "texto": f"{f['nombre']}: vence el {f['vence'].isoformat()}"})
+        faltan = [f["nombre"] for f in documentos["filas"] if f["exigido"] and not f["cargado"]]
+        if documentos["carpeta"] and faltan and r["estado"] in ("activo", "onboarding"):
+            a.append({"tono": "alerta", "texto": "Faltan documentos: " + ", ".join(faltan)})
     vigente = r["estado"] in ("activo", "onboarding")
     if vigente and r["dd_estado"] != "completa":
         a.append({"tono": "alerta" if r["estado"] == "onboarding" else "critico",
@@ -148,8 +159,11 @@ def listar(engine: Engine, organizacion_id: int, hoy: date | None = None) -> dic
         filas = [_fila(f) for f in conn.execute(text(_SELECT + " WHERE r.organizacion_id = :o ORDER BY "
                  "array_position(ARRAY['activo','onboarding','prospecto','suspendido','terminado'], r.estado), lower(b.nombre)"),
                  {"o": organizacion_id})]
-    for r in filas:
-        r["avisos"] = _avisos(r, hoy)
+    from core.cumplimiento.carpeta_compliance import estado_documentos_aliado
+    with engine.connect() as conn:
+        for r in filas:
+            r["documentos"] = estado_documentos_aliado(conn, r, hoy)
+            r["avisos"] = _avisos(r, hoy, r["documentos"])
     vigentes = [r for r in filas if r["estado"] in ("activo", "onboarding")]
     resumen = {
         "total": len(filas),
@@ -158,6 +172,10 @@ def listar(engine: Engine, organizacion_id: int, hoy: date | None = None) -> dic
         "revision_vencida": sum(bool(r["proxima_revision"] and r["proxima_revision"] < hoy) for r in filas
                                 if r["estado"] != "terminado"),
         "riesgo_alto": sum(r["nivel_riesgo"] == "Alto" for r in vigentes),
+        "documentos_vencidos": sum(any(f["estado_vence"] == "vencido" for f in r["documentos"]["filas"]) for r in filas
+                                   if r["estado"] != "terminado"),
+        "documentos_por_vencer": sum(any(f["estado_vence"] == "por_vencer" for f in r["documentos"]["filas"]) for r in filas
+                                     if r["estado"] != "terminado"),
     }
     return {"aliados": filas, "resumen": resumen}
 
@@ -176,7 +194,10 @@ def obtener(engine: Engine, organizacion_id: int, relacion_id: int, hoy: date | 
             "SELECT o.nombre, x.estado FROM org_aliados x JOIN organizaciones o ON o.id = x.organizacion_id "
             "WHERE x.aliado_id = :a AND x.organizacion_id <> :o ORDER BY o.nombre"),
             {"a": r["aliado_id"], "o": organizacion_id})]
-    r["avisos"] = _avisos(r, hoy or date.today())
+    from core.cumplimiento.carpeta_compliance import estado_documentos_aliado
+    with engine.connect() as conn:
+        r["documentos"] = estado_documentos_aliado(conn, r, hoy)
+    r["avisos"] = _avisos(r, hoy or date.today(), r["documentos"])
     return r
 
 

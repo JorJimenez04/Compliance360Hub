@@ -13,6 +13,7 @@ import ClientesOrganizacion from "./clientes";
 import AliadosOrganizacion from "./aliados";
 import RequerimientosOrganizacion from "./requerimientos";
 import ReportesUiaf from "./reportes-uiaf";
+import CarpetaCompliance from "./carpeta-compliance";
 import { ListaAlertas } from "@/components/cumplimiento/alertas";
 
 const PESTANAS = [
@@ -64,7 +65,7 @@ function Vista({ id }: { id: number }) {
         : pestana === "requerimientos" ? <RequerimientosOrganizacion key={`${params.get("req")}-${params.get("nuevo")}`} organizacionId={id} nombre={ficha.datos?.nombre}
             abrir={params.get("req") ? Number(params.get("req")) : null} prellenar={params.get("nuevo")} />
         : pestana === "alertas" ? <ListaAlertas ruta={`/api/organizaciones/${id}/alertas`} />
-        : <FichaOrganizacion id={id} embebida />}
+        : <div className="space-y-6"><CarpetaCompliance organizacionId={id} /><FichaOrganizacion id={id} embebida /></div>}
     </div>
   );
 }

@@ -30,7 +30,7 @@ def test_permisos():
     externo = seg.Usuario(9, "equipo", "E", "cliente", organizacion_id=1, alcance="organizacion")
     director = seg.Usuario(8, "dir", "D", "director_cumplimiento")
     rutas = [r for r in ra.router.routes if isinstance(r, APIRoute)]
-    assert len(rutas) == 7
+    assert len(rutas) == 8
     for r in rutas:
         dep = r.dependant.dependencies[-1].call
         with pytest.raises(HTTPException):
@@ -133,6 +133,7 @@ def test_avisos_y_resumen(pg):
     assert any("Debida diligencia no iniciada" in t for t in av["Alfa"]) and "Sin calificación de riesgo" in av["Alfa"]
     assert any("Revisión vencida" in t for t in av["Beta"]) and not any("Debida" in t for t in av["Beta"])
     assert av["Gama"] == []
-    assert lista["resumen"] == {"total": 3, "activos": 2, "diligencia_pendiente": 1, "revision_vencida": 1, "riesgo_alto": 1}
+    assert lista["resumen"] == {"total": 3, "activos": 2, "diligencia_pendiente": 1, "revision_vencida": 1, "riesgo_alto": 1,
+                                "documentos_vencidos": 0, "documentos_por_vencer": 0}
     assert [x["nombre"] for x in lista["aliados"]][-1] == "Gama"                                  # terminados al final
     assert a
