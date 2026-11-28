@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ClipboardList, ExternalLink, MessageSquarePlus, Pencil, Plus, Save, Send, X } from "lucide-react";
+import { ClipboardList, ExternalLink, MessageSquarePlus, Pencil, Plus, Save, Search, Send, Trash2, X } from "lucide-react";
 import { Aviso, Boton, Entrada, Esqueleto, Etiqueta, Insignia, Selector, Tarjeta, TituloTarjeta, Vacio } from "@/components/ui/basicos";
 import { enviar, ErrorApi } from "@/lib/api";
 import { useDatos } from "@/lib/useDatos";
@@ -17,12 +17,14 @@ interface Catalogos {
   origenes: Record<string, string>; tipos: Record<string, string>; canales: Record<string, string>;
   prioridades: Record<string, string>; estados: Record<string, string>;
 }
+export interface BeneficiarioReq { id_beneficiario: string | null; nombre: string; actividad: string | null; notas?: string | null }
 export interface Requerimiento {
   id: number; organizacion_id: number; consecutivo: string; dirigido_a: "organizacion" | "cliente"; cliente_id: number | null;
   cliente: string | null; origen: string; relacion_aliado_id: number | null; aliado: string | null; origen_detalle: string | null;
   solicitante: string | null; canal: string | null; tipo: string; asunto: string; descripcion: string | null; referencias_tx: string[];
   fecha_recibido: string; fecha_limite: string | null; prioridad: string; responsable: string | null; estado: string;
   fecha_envio: string | null; resumen_respuesta: string | null; carpeta_evidencias: string | null; organizacion: string;
+  beneficiarios: BeneficiarioReq[];
   plazo: "atrasado" | "por_vencer" | "a_tiempo" | "sin_plazo" | "cumplido" | "fuera_de_plazo"; dias: number | null; abierto: boolean;
 }
 interface Detalle extends Requerimiento {
@@ -203,6 +205,7 @@ function Formulario({ ruta, cat, opciones, prellenar, actual, onCerrar, onGuarda
     fecha_limite: actual?.fecha_limite ?? "", prioridad: actual?.prioridad ?? "media", responsable: actual?.responsable ?? username ?? "",
     carpeta_evidencias: actual?.carpeta_evidencias ?? "",
   });
+  const [beneficiarios, setBeneficiarios] = useState<BeneficiarioReq[]>(actual?.beneficiarios ?? []);
   const poner = (x: Partial<typeof f>) => setF((v) => ({ ...v, ...x }));
   const { guardando, fallo, ejecutar } = useEnvio(() => undefined);
   const listo = f.asunto.trim().length >= 5 && f.tipo && f.origen && f.fecha_recibido
@@ -216,6 +219,8 @@ function Formulario({ ruta, cat, opciones, prellenar, actual, onCerrar, onGuarda
       solicitante: v(f.solicitante), canal: f.canal || null, tipo: f.tipo, asunto: f.asunto.trim(), descripcion: v(f.descripcion),
       referencias_tx: f.referencias_tx.split(/[,\n]/).map((x) => x.trim()).filter(Boolean), fecha_recibido: f.fecha_recibido,
       fecha_limite: f.fecha_limite || null, prioridad: f.prioridad, responsable: v(f.responsable), carpeta_evidencias: v(f.carpeta_evidencias),
+      beneficiarios: beneficiarios.map((b) => ({ id_beneficiario: b.id_beneficiario?.trim() || null, nombre: b.nombre.trim(),
+        actividad: b.actividad?.trim() || null, notas: b.notas ?? null })).filter((b) => b.nombre),
     };
     if (actual) { const r = await ejecutar(ruta, cuerpo, "PATCH"); if (r) await onGuardado(actual.id); }
     else { const r = await ejecutar<{ id: number }>(ruta, cuerpo); if (r?.id) await onGuardado(r.id); }
@@ -237,7 +242,7 @@ function Formulario({ ruta, cat, opciones, prellenar, actual, onCerrar, onGuarda
         {f.origen === "aliado" ? <div><Etiqueta htmlFor="rq-ali">Aliado bancario</Etiqueta>
           <Selector id="rq-ali" value={f.relacion_aliado_id} onChange={(e) => poner({ relacion_aliado_id: e.target.value })}>
             <option value="">Seleccione…</option>{opciones.aliados.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}</Selector></div>
-          : f.origen && f.origen !== "oficial" ? <div><Etiqueta htmlFor="rq-od">¿Quién exactamente?</Etiqueta>
+          : f.origen && !["oficial", "director"].includes(f.origen) ? <div><Etiqueta htmlFor="rq-od">¿Quién exactamente?</Etiqueta>
             <Entrada id="rq-od" value={f.origen_detalle} placeholder={f.origen === "regulador" ? "UIAF, Supersociedades…" : "Firma auditora"}
               onChange={(e) => poner({ origen_detalle: e.target.value })} /></div> : null}
         <div><Etiqueta htmlFor="rq-sol">Persona que lo pidió</Etiqueta><Entrada id="rq-sol" value={f.solicitante} onChange={(e) => poner({ solicitante: e.target.value })} /></div>
@@ -266,6 +271,8 @@ function Formulario({ ruta, cat, opciones, prellenar, actual, onCerrar, onGuarda
         <div className="md:col-span-3"><Etiqueta htmlFor="rq-carp">Carpeta de evidencias en OneDrive</Etiqueta>
           <Entrada id="rq-carp" value={f.carpeta_evidencias} placeholder="https://… (Requerimientos/REQ-2026-001 - Asunto)" onChange={(e) => poner({ carpeta_evidencias: e.target.value })} /></div>
       </fieldset>
+      <EditorBeneficiarios clienteId={f.dirigido_a === "cliente" && f.cliente_id ? Number(f.cliente_id) : null}
+        valor={beneficiarios} onCambio={setBeneficiarios} />
       {fallo && <Aviso tono="critico">{fallo}</Aviso>}
       <div className="flex gap-2">
         <Boton variante="primario" cargando={guardando} disabled={!listo} onClick={guardar}><Save className="size-4" aria-hidden />{actual ? "Guardar cambios" : "Registrar requerimiento"}</Boton>
@@ -340,6 +347,10 @@ function DetalleRequerimiento({ ruta, cat, opciones, onCambio, onCerrar }:
                 : <span className="text-texto-3">Sin carpeta enlazada</span>}</Dato>
               {q.resumen_respuesta && <Dato titulo="Respuesta enviada"><span className="whitespace-pre-line">{q.resumen_respuesta}</span></Dato>}
             </section>
+            {q.beneficiarios.length > 0 && <div className="md:col-span-3"><Dato titulo="Beneficiarios involucrados">
+              <ul className="mt-1 divide-y divide-borde">{q.beneficiarios.map((b, i) => (
+                <li key={i} className="py-1.5"><span className="font-medium">{b.nombre}</span>{b.id_beneficiario && <span className="text-texto-3"> · {b.id_beneficiario}</span>}
+                  {b.actividad ? <span className="text-texto-2"> · {b.actividad}</span> : <span className="text-alerta"> · actividad sin registrar</span>}</li>))}</ul></Dato></div>}
             {q.descripcion && <div className="md:col-span-3"><Dato titulo="Descripción"><span className="whitespace-pre-line text-texto-2">{q.descripcion}</span></Dato></div>}
           </div>
         )}
@@ -419,5 +430,54 @@ function NuevaNota({ ruta, onHecho, onCancelar }: { ruta: string; onHecho: () =>
         <Boton variante="fantasma" onClick={onCancelar}>Cancelar</Boton>
       </div>
     </div>
+  );
+}
+
+// ================= Beneficiarios involucrados =================
+function EditorBeneficiarios({ clienteId, valor, onCambio }:
+  { clienteId: number | null; valor: BeneficiarioReq[]; onCambio: (v: BeneficiarioReq[]) => void }) {
+  const [q, setQ] = useState("");
+  const busqueda = useDatos<{ beneficiarios: { id_beneficiario: string | null; nombre: string; pagos: number; monto: number }[] }>(
+    clienteId && q.trim().length >= 2 ? `/api/clientes/${clienteId}/beneficiarios/buscar?q=${encodeURIComponent(q.trim())}` : null);
+  const poner = (i: number, x: Partial<BeneficiarioReq>) => onCambio(valor.map((b, j) => (j === i ? { ...b, ...x } : b)));
+  const agregar = (b: BeneficiarioReq) => {
+    const clave = (b.id_beneficiario || b.nombre).toLowerCase();
+    if (!valor.some((x) => (x.id_beneficiario || x.nombre).toLowerCase() === clave)) onCambio([...valor, b]);
+    setQ("");
+  };
+  return (
+    <fieldset className="space-y-3">
+      <legend className="mb-1 text-[13px] font-medium text-texto-2">Beneficiarios involucrados</legend>
+      {clienteId ? (
+        <div className="relative max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-texto-3" aria-hidden />
+          <Entrada className="pl-9" placeholder="Buscar entre los beneficiarios del subcliente" value={q} onChange={(e) => setQ(e.target.value)} />
+          {q.trim().length >= 2 && (busqueda.datos?.beneficiarios.length ?? 0) > 0 && (
+            <div className="mt-1 rounded-lg border border-borde-fuerte bg-panel">
+              {busqueda.datos!.beneficiarios.map((b) => (
+                <button key={`${b.id_beneficiario}-${b.nombre}`} type="button" className="block w-full px-3 py-2 text-left text-sm hover:bg-panel-2"
+                  onClick={() => agregar({ id_beneficiario: b.id_beneficiario, nombre: b.nombre, actividad: null })}>
+                  <span className="font-medium">{b.nombre}</span> <span className="text-texto-3">{b.id_beneficiario} · {b.pagos} pagos</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : <p className="text-xs text-texto-3">Para buscar entre los beneficiarios, dirija el requerimiento a un subcliente. También puede agregarlos a mano.</p>}
+      {valor.length > 0 && (
+        <div className="space-y-2">
+          {valor.map((b, i) => (
+            <div key={i} className="grid gap-2 md:grid-cols-[1.2fr_0.8fr_1.6fr_auto]">
+              <Entrada aria-label="Nombre del beneficiario" value={b.nombre} onChange={(e) => poner(i, { nombre: e.target.value })} />
+              <Entrada aria-label="Documento" placeholder="Documento" value={b.id_beneficiario ?? ""} onChange={(e) => poner(i, { id_beneficiario: e.target.value })} />
+              <Entrada aria-label="Actividad del beneficiario" placeholder="Actividad (ej.: comercio de ropa)" value={b.actividad ?? ""} onChange={(e) => poner(i, { actividad: e.target.value })} />
+              <Boton variante="fantasma" aria-label="Quitar" onClick={() => onCambio(valor.filter((_, j) => j !== i))}><Trash2 className="size-4" aria-hidden /></Boton>
+            </div>
+          ))}
+        </div>
+      )}
+      <button type="button" className="text-xs text-acento hover:underline" onClick={() => onCambio([...valor, { id_beneficiario: null, nombre: "", actividad: null }])}>
+        + Agregar beneficiario a mano</button>
+    </fieldset>
   );
 }

@@ -38,6 +38,13 @@ def _seguro(fn):
         raise HTTPException(404, str(e))
 
 
+class Beneficiario(BaseModel):
+    id_beneficiario: str | None = Field(None, max_length=60)
+    nombre: str = Field(max_length=200)
+    actividad: str | None = Field(None, max_length=500)
+    notas: str | None = Field(None, max_length=1000)
+
+
 class Datos(BaseModel):
     dirigido_a: str | None = None
     cliente_id: int | None = None
@@ -55,6 +62,7 @@ class Datos(BaseModel):
     prioridad: str | None = None
     responsable: str | None = Field(None, max_length=120)
     carpeta_evidencias: str | None = Field(None, max_length=1000)
+    beneficiarios: list[Beneficiario] | None = Field(None, max_length=50)
 
 
 class Nuevo(Datos):

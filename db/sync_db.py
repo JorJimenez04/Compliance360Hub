@@ -80,6 +80,7 @@ ALL_MIGRATIONS: list[str] = [
     "044_eliminar_perfiles_anteriores.sql",
     "045_aliados_bancarios.sql",
     "046_requerimientos.sql",
+    "047_tablero_reportes_uiaf.sql",
 ]
 
 # Tablas / columnas a validar tras las migraciones
@@ -98,6 +99,7 @@ VALIDATION_QUERIES: list[tuple[str, str]] = [
     ("cmp_documentos",    "SELECT COUNT(*) FROM cmp_documentos"),
     ("org_aliados",       "SELECT COUNT(*) FROM org_aliados"),
     ("requerimientos",    "SELECT COUNT(*) FROM requerimientos"),
+    ("reportes_uiaf",     "SELECT COUNT(*) FROM reportes_uiaf"),
     ("usuarios.organizacion_id (col)", "SELECT organizacion_id, alcance FROM usuarios LIMIT 1"),
 ]
 

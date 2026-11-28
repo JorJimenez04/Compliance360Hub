@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, BookOpenCheck, Building2, ExternalLink, LayoutDashboard, ScrollText, Users, Loader2, LogOut, Menu, X } from "lucide-react";
+import { Activity, BookOpenCheck, Building2, ExternalLink, Gauge, LayoutDashboard, ScrollText, Users, Loader2, LogOut, Menu, X } from "lucide-react";
 import { api, enviar, ErrorApi } from "@/lib/api";
 import { ContextoSesion } from "@/lib/sesion";
 import { ROLES_EXTERNOS, type Perfil } from "@/lib/tipos";
@@ -16,7 +16,10 @@ const ROLES: Record<string, string> = {
 
 // Módulos ya migrados a la nueva interfaz. El resto sigue en la app actual (Streamlit).
 const SECCIONES = [
-  { titulo: "Gestión", items: [{ modulo: "junta", nombre: "Tablero ejecutivo", href: "/junta", icono: LayoutDashboard }] },
+  { titulo: "Gestión", items: [
+    { modulo: "tablero", nombre: "Tablero de cumplimiento", href: "/tablero", icono: Gauge },
+    { modulo: "junta", nombre: "Tablero ejecutivo", href: "/junta", icono: LayoutDashboard },
+  ] },
   { titulo: "Monitoreo", items: [{ modulo: "monitoreo", nombre: "Monitoreo transaccional", href: "/monitoreo", icono: Activity }] },
   { titulo: "Administración", items: [
     { modulo: "organizaciones", nombre: "Organizaciones", href: "/organizaciones", icono: Building2 },
