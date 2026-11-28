@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ClipboardList, ExternalLink, MessageSquarePlus, Pencil, Plus, Save, Search, Send, Trash2, X } from "lucide-react";
+import { ClipboardList, ExternalLink, FolderOpen, Lightbulb, MessageSquarePlus, Pencil, Plus, Save, Search, Send, Trash2, X } from "lucide-react";
+import { BotonPaqueteBanco } from "@/components/cumplimiento/paquete-banco";
 import { Aviso, Boton, Entrada, Esqueleto, Etiqueta, Insignia, Selector, Tarjeta, TituloTarjeta, Vacio } from "@/components/ui/basicos";
 import { enviar, ErrorApi } from "@/lib/api";
 import { useDatos } from "@/lib/useDatos";
@@ -25,12 +26,15 @@ export interface Requerimiento {
   fecha_recibido: string; fecha_limite: string | null; prioridad: string; responsable: string | null; estado: string;
   fecha_envio: string | null; resumen_respuesta: string | null; carpeta_evidencias: string | null; organizacion: string;
   beneficiarios: BeneficiarioReq[];
+  carpeta_web_url: string | null; ev_solicitud: number | null; ev_soportes: number | null; ev_respuesta: number | null;
+  sin_evidencia_respuesta: boolean; clave_origen: string | null;
   plazo: "atrasado" | "por_vencer" | "a_tiempo" | "sin_plazo" | "cumplido" | "fuera_de_plazo"; dias: number | null; abierto: boolean;
 }
 interface Detalle extends Requerimiento {
   eventos: { tipo: string; valor_anterior: string | null; valor_nuevo: string | null; comentario: string | null; usuario: string; fecha: string }[];
 }
-interface Resumen { abiertos: number; atrasados: number; por_vencer: number; fuera_de_plazo: number; total: number }
+interface Resumen { abiertos: number; atrasados: number; por_vencer: number; fuera_de_plazo: number; total: number; sin_evidencia_respuesta?: number }
+interface Sugerencia { clave: string; dirigido_a: string; cliente: string | null; tipo: string; asunto: string; motivo: string; prioridad: "alta" | "media" | "baja"; fecha_limite: string }
 interface Opciones { clientes: { id: number; razon_social: string }[]; aliados: { id: number; nombre: string; estado: string }[] }
 
 const TONO_ESTADO: Record<string, Tono> = { recibido: "acento", en_preparacion: "alerta", en_revision: "alerta", enviado: "ok", cerrado: "neutro", seguimiento: "serio" };
@@ -105,6 +109,8 @@ export default function RequerimientosOrganizacion({ organizacionId, nombre, abr
       {nuevo && <Formulario ruta={ruta} cat={c} opciones={datos.datos} prellenar={prellenar}
         onCerrar={() => setNuevo(false)} onGuardado={async (id) => { setNuevo(false); await datos.recargar(); setAbierto(id); }} />}
 
+      <Sugerencias ruta={ruta} cat={c} onCreado={async (id) => { await datos.recargar(); setAbierto(id); }} />
+
       <Tarjeta>
         <TituloTarjeta titulo={`Requerimientos${nombre ? ` de ${nombre}` : ""} y sus clientes`}
           descripcion="Lo que piden los aliados bancarios, reguladores y auditores, o lo que usted le pide a la organización o a sus clientes."
@@ -154,7 +160,8 @@ function TablaRequerimientos({ filas, cat, seleccionado, onElegir, enlace }:
               <td className="pr-4 text-texto-2">{q.dirigido_a === "cliente" ? q.cliente : q.organizacion}</td>
               <td className="pr-4 text-texto-2">{q.origen === "aliado" ? q.aliado : q.origen_detalle ?? cat.origenes[q.origen]}</td>
               <td className="pr-4"><Plazo q={q} /></td>
-              <td className="pr-4"><Insignia tono={TONO_ESTADO[q.estado]}>{cat.estados[q.estado]}</Insignia></td>
+              <td className="pr-4"><Insignia tono={TONO_ESTADO[q.estado]}>{cat.estados[q.estado]}</Insignia>
+                {q.sin_evidencia_respuesta && <span className="ml-1 text-xs text-alerta" title="No hay archivos en «3. Respuesta»">sin evidencia</span>}</td>
               <td className="text-texto-2">{q.responsable ?? "—"}</td>
             </tr>
           );
@@ -325,6 +332,7 @@ function DetalleRequerimiento({ ruta, cat, opciones, onCambio, onCerrar }:
           {q.prioridad === "alta" && <Insignia tono="critico">Prioridad alta</Insignia>}
         </div>
 
+        {q.sin_evidencia_respuesta && <Aviso tono="alerta">Está marcado como enviado pero la carpeta «3. Respuesta» no tiene archivos. Guarde allí lo que se envió.</Aviso>}
         {modo === "estado" && <CambioEstado ruta={`${ruta}/estado`} q={q} cat={cat} onHecho={hecho} onCancelar={() => setModo("ver")} />}
         {modo === "nota" && <NuevaNota ruta={`${ruta}/notas`} onHecho={hecho} onCancelar={() => setModo("ver")} />}
         {modo === "editar" && <Formulario ruta={ruta} cat={cat} opciones={opciones} actual={q} onCerrar={() => setModo("ver")} onGuardado={hecho} />}
@@ -342,9 +350,14 @@ function DetalleRequerimiento({ ruta, cat, opciones, onCambio, onCerrar }:
               <Dato titulo="Transacciones relacionadas">{q.referencias_tx.join(", ")}</Dato>
             </section>
             <section className="space-y-3">
-              <Dato titulo="Evidencias">{q.carpeta_evidencias
-                ? <a href={q.carpeta_evidencias} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-acento hover:underline">Abrir carpeta en OneDrive<ExternalLink className="size-3.5" aria-hidden /></a>
-                : <span className="text-texto-3">Sin carpeta enlazada</span>}</Dato>
+              <Dato titulo="Evidencias">{q.carpeta_web_url || q.carpeta_evidencias ? (
+                <div className="space-y-1">
+                  <a href={(q.carpeta_web_url || q.carpeta_evidencias)!} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-acento hover:underline">
+                    <FolderOpen className="size-3.5" aria-hidden />Abrir carpeta en OneDrive<ExternalLink className="size-3" aria-hidden /></a>
+                  {q.ev_solicitud != null && <p className="text-xs text-texto-2">Solicitud {q.ev_solicitud} · Soportes {q.ev_soportes} · Respuesta {q.ev_respuesta}</p>}
+                </div>)
+                : <span className="text-xs text-texto-3">Sin carpeta. Créela como «{q.consecutivo} - asunto» dentro de «Requerimientos» (de la organización o del subcliente) y revise la carpeta Compliance.</span>}</Dato>
+              {q.dirigido_a === "cliente" && q.cliente_id && <div><BotonPaqueteBanco clienteId={q.cliente_id} compacto /></div>}
               {q.resumen_respuesta && <Dato titulo="Respuesta enviada"><span className="whitespace-pre-line">{q.resumen_respuesta}</span></Dato>}
             </section>
             {q.beneficiarios.length > 0 && <div className="md:col-span-3"><Dato titulo="Beneficiarios involucrados">
@@ -479,5 +492,40 @@ function EditorBeneficiarios({ clienteId, valor, onCambio }:
       <button type="button" className="text-xs text-acento hover:underline" onClick={() => onCambio([...valor, { id_beneficiario: null, nombre: "", actividad: null }])}>
         + Agregar beneficiario a mano</button>
     </fieldset>
+  );
+}
+
+// ================= Sugeridos por la plataforma =================
+function Sugerencias({ ruta, cat, onCreado }: { ruta: string; cat: Catalogos; onCreado: (id: number) => Promise<void> }) {
+  const puede = usePuedeGestionar();
+  const d = useDatos<{ sugerencias: Sugerencia[] }>(`${ruta}/sugerencias`);
+  const [creando, setCreando] = useState<string | null>(null);
+  const [fallo, setFallo] = useState<string | null>(null);
+  const [todas, setTodas] = useState(false);
+  const lista = d.datos?.sugerencias ?? [];
+  if (lista.length === 0) return null;
+  async function crear(clave: string) {
+    setCreando(clave); setFallo(null);
+    try { const r = await enviar<{ id: number }>(`${ruta}/sugerencias/crear`, { clave }); await d.recargar(); if (r?.id) await onCreado(r.id); }
+    catch (e) { setFallo(e instanceof ErrorApi ? e.message : "No se pudo crear."); }
+    finally { setCreando(null); }
+  }
+  return (
+    <Tarjeta>
+      <TituloTarjeta titulo={`Sugeridos por la plataforma (${lista.length})`}
+        descripcion="Pendientes detectados en documentos, perfiles y aliados. Nada se crea solo: conviértalos en requerimiento con un clic." />
+      <ul className="divide-y divide-borde px-5 pb-3 pt-1 text-sm">
+        {(todas ? lista : lista.slice(0, 5)).map((s) => (
+          <li key={s.clave} className="flex flex-wrap items-start gap-3 py-2.5">
+            <Lightbulb className={cn("mt-0.5 size-4 shrink-0", s.prioridad === "alta" ? "text-critico" : "text-alerta")} aria-hidden />
+            <div className="min-w-[260px] flex-1"><p className="font-medium">{s.asunto}</p>
+              <p className="text-xs text-texto-3">{s.motivo} · {cat.tipos[s.tipo]} · dirigido a {s.dirigido_a === "cliente" ? s.cliente : "la organización"}</p></div>
+            {puede && <Boton cargando={creando === s.clave} onClick={() => crear(s.clave)}><Plus className="size-4" aria-hidden />Crear requerimiento</Boton>}
+          </li>
+        ))}
+      </ul>
+      {lista.length > 5 && <button className="px-5 pb-4 text-xs text-acento hover:underline" onClick={() => setTodas(!todas)}>{todas ? "Ver menos" : `Ver las ${lista.length}`}</button>}
+      {fallo && <div className="px-5 pb-4"><Aviso tono="critico">{fallo}</Aviso></div>}
+    </Tarjeta>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, Building2, Landmark, Pencil, Plus, Save, Search, X } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Building2, Check, ExternalLink, FileText, Landmark, Pencil, Plus, Save, Search, X } from "lucide-react";
 import { Aviso, Boton, Entrada, Esqueleto, Etiqueta, Insignia, Selector, Tarjeta, TituloTarjeta, Vacio, tonoRiesgo } from "@/components/ui/basicos";
 import { enviar, ErrorApi } from "@/lib/api";
 import { useDatos } from "@/lib/useDatos";
@@ -26,6 +26,15 @@ interface Aliado {
   nivel_riesgo: string | null; proxima_revision: string | null; dd_estado: string; dd_fecha: string | null; dd_nivel: string | null;
   exigencias: string[]; contacto_cumplimiento: string | null; correo_cumplimiento: string | null; telefono_cumplimiento: string | null;
   contacto_comercial: string | null; correo_comercial: string | null; notas: string | null; avisos: AvisoAliado[];
+  vence_contrato: string | null; vence_poliza: string | null; vence_licencia: string | null;
+  carpeta_web_url: string | null; carpeta_nombre: string | null; carpeta_revisada_en: string | null;
+  documentos: DocumentosAliado;
+}
+interface ArchivoAliado { id: number; codigo: string | null; nombre_archivo: string; ruta: string | null; web_url: string | null; asignacion: string }
+interface DocumentosAliado {
+  filas: { codigo: string; nombre: string; exigido: boolean; cargado: boolean; archivos: ArchivoAliado[]; vence: string | null;
+    estado_vence: "vencido" | "por_vencer" | "vigente" | null }[];
+  sin_reconocer: ArchivoAliado[]; completo: boolean; carpeta: boolean;
 }
 interface Detalle extends Aliado {
   historial: { campo: string; valor_anterior: string | null; valor_nuevo: string | null; motivo: string | null; usuario: string; fecha: string }[];
@@ -304,6 +313,7 @@ function DetalleAliado({ organizacionId, relacionId, cat, onCambio, onCerrar }:
           </div>
         )}
         {modo === "ver" && a.notas && <Dato titulo="Notas de la relación"><span className="whitespace-pre-line text-texto-2">{a.notas}</span></Dato>}
+        {modo === "ver" && <DocumentosDelAliado a={a} organizacionId={organizacionId} onCambio={d.recargar} />}
 
         <div>
           <h3 className="mb-2 text-[13px] font-medium text-texto-2">Bitácora</h3>
@@ -381,7 +391,7 @@ function Edicion({ ruta, a, cat, onHecho, onCancelar }:
     notas_entidad: a.notas_entidad ?? "", fecha_inicio: a.fecha_inicio ?? "", servicios: a.servicios, monedas: a.monedas.join(", "),
     exigencias: a.exigencias.join("\n"), contacto_cumplimiento: a.contacto_cumplimiento ?? "", correo_cumplimiento: a.correo_cumplimiento ?? "",
     telefono_cumplimiento: a.telefono_cumplimiento ?? "", contacto_comercial: a.contacto_comercial ?? "", correo_comercial: a.correo_comercial ?? "",
-    notas: a.notas ?? "",
+    notas: a.notas ?? "", vence_contrato: a.vence_contrato ?? "", vence_poliza: a.vence_poliza ?? "", vence_licencia: a.vence_licencia ?? "",
   });
   const poner = (x: Partial<typeof f>) => setF((v) => ({ ...v, ...x }));
   const { guardando, fallo, ejecutar } = useEnvio(onHecho);
@@ -396,6 +406,7 @@ function Edicion({ ruta, a, cat, onHecho, onCancelar }:
       contacto_cumplimiento: vacio(f.contacto_cumplimiento), correo_cumplimiento: vacio(f.correo_cumplimiento),
       telefono_cumplimiento: vacio(f.telefono_cumplimiento), contacto_comercial: vacio(f.contacto_comercial),
       correo_comercial: vacio(f.correo_comercial), notas: vacio(f.notas),
+      vence_contrato: f.vence_contrato || null, vence_poliza: f.vence_poliza || null, vence_licencia: f.vence_licencia || null,
     }, "PATCH");
   }
 
@@ -422,6 +433,8 @@ function Edicion({ ruta, a, cat, onHecho, onCancelar }:
       <fieldset className="grid gap-4 md:grid-cols-3">
         <legend className="mb-1 text-[13px] font-medium text-texto-2">La relación</legend>
         {campo("fecha_inicio", "Inicio de la relación", { type: "date" })}{campo("monedas", "Monedas", { placeholder: "COP, USD" })}
+        {campo("vence_contrato", "Vencimiento del contrato", { type: "date" })}{campo("vence_poliza", "Vencimiento de la póliza", { type: "date" })}
+        {campo("vence_licencia", "Vencimiento de la licencia", { type: "date" })}
         <div className="md:col-span-3"><Etiqueta>Servicios</Etiqueta><Chips opciones={cat.servicios} valor={f.servicios} onCambio={(servicios) => poner({ servicios })} /></div>
         <div className="md:col-span-3"><Etiqueta htmlFor="ed-ex">Lo que exige a la organización (una por línea)</Etiqueta>
           <textarea id="ed-ex" rows={3} className={area} value={f.exigencias} placeholder={"Recertificación AML anual\nKYC de cada cliente nuevo antes de operar"}
@@ -438,5 +451,55 @@ function Edicion({ ruta, a, cat, onHecho, onCancelar }:
         <Boton variante="fantasma" onClick={onCancelar}>Cancelar</Boton>
       </div>
     </div>
+  );
+}
+
+// ================= Documentos del aliado (desde su carpeta en OneDrive) =================
+const DOCS_ALIADO: Record<string, string> = { contrato: "Contrato", poliza: "Póliza", licencia: "Licencia o autorización del regulador",
+  certificado_existencia: "Certificado de existencia", rut: "RUT", aml: "Cuestionario o certificación AML / SARLAFT", estados_financieros: "Estados financieros" };
+
+function DocumentosDelAliado({ a, organizacionId, onCambio }: { a: Detalle; organizacionId: number; onCambio: () => Promise<void> }) {
+  const puede = usePuedeGestionar();
+  const [fallo, setFallo] = useState<string | null>(null);
+  const docs = a.documentos;
+  async function asignar(id: number, codigo: string) {
+    setFallo(null);
+    try { await enviar(`/api/organizaciones/${organizacionId}/aliados/documentos/${id}/asignar`, { codigo: codigo || null }); await onCambio(); }
+    catch (e) { setFallo(e instanceof ErrorApi ? e.message : "No se pudo asignar."); }
+  }
+  return (
+    <section>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <h3 className="flex items-center gap-1.5 text-[13px] font-medium text-texto-2"><FileText className="size-4" aria-hidden />Documentos</h3>
+        {docs.carpeta ? (a.carpeta_web_url && <a href={a.carpeta_web_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-acento hover:underline">
+          Carpeta «{a.carpeta_nombre}»<ExternalLink className="size-3" aria-hidden /></a>)
+          : <span className="text-xs text-texto-3">Sin carpeta: créela en «Compliance/Aliados bancarios/{a.nombre}» y revise la carpeta Compliance (Ficha de la organización).</span>}
+        {docs.carpeta && <Insignia tono={docs.completo ? "ok" : "alerta"}>{docs.completo ? "Completos" : "Incompletos"}</Insignia>}
+      </div>
+      <ul className="divide-y divide-borde text-sm">
+        {docs.filas.map((f) => (
+          <li key={f.codigo} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+            <span className={cn("inline-flex size-5 items-center justify-center rounded-full", f.cargado ? "bg-ok/15 text-ok" : "bg-panel-2 text-texto-3")}>
+              {f.cargado ? <Check className="size-3.5" aria-hidden /> : <span className="text-xs">·</span>}</span>
+            <span className="min-w-[220px] flex-1">{f.nombre}{!f.exigido && <span className="text-xs text-texto-3"> (opcional)</span>}</span>
+            {f.archivos.map((x) => <a key={x.id} href={x.web_url ?? "#"} target="_blank" rel="noreferrer" className="max-w-[260px] truncate text-xs text-acento hover:underline">{x.nombre_archivo}</a>)}
+            {f.vence && <Insignia tono={f.estado_vence === "vencido" ? "critico" : f.estado_vence === "por_vencer" ? "alerta" : "ok"}>
+              {f.estado_vence === "vencido" ? "Vencido" : "Vence"} {fecha(f.vence)}</Insignia>}
+          </li>
+        ))}
+      </ul>
+      {docs.sin_reconocer.length > 0 && (
+        <div className="mt-3">
+          <p className="mb-1 text-xs text-texto-3">Archivos sin reconocer: asigne el tipo si corresponde (queda así aunque se vuelva a revisar).</p>
+          <ul className="space-y-1.5 text-sm">{docs.sin_reconocer.map((x) => (
+            <li key={x.id} className="flex flex-wrap items-center gap-2">
+              <a href={x.web_url ?? "#"} target="_blank" rel="noreferrer" className="text-acento hover:underline">{x.nombre_archivo}</a>
+              {puede && <Selector aria-label={`Tipo de ${x.nombre_archivo}`} className="w-auto py-1 text-xs" value="" onChange={(e) => asignar(x.id, e.target.value)}>
+                <option value="">Asignar como…</option>{Object.entries(DOCS_ALIADO).map(([k, n]) => <option key={k} value={k}>{n}</option>)}</Selector>}
+            </li>))}</ul>
+        </div>
+      )}
+      {fallo && <Aviso tono="critico">{fallo}</Aviso>}
+    </section>
   );
 }

@@ -91,6 +91,28 @@ def listar(organizacion_id: int, u: seg.Usuario = Depends(interno)) -> dict:
     return _json({**rq.listar(_engine(), organizacion_id), **rq.opciones(_engine(), organizacion_id)})
 
 
+class DesdeSugerencia(BaseModel):
+    clave: str = Field(max_length=200)
+
+
+# Van antes de /requerimientos/{rid} para que «sugerencias» no se lea como un número
+@router.get("/api/organizaciones/{organizacion_id}/requerimientos/sugerencias")
+def sugerencias(organizacion_id: int, u: seg.Usuario = Depends(interno)) -> dict:
+    from core.cumplimiento import sugerencias as sg
+    _organizacion(organizacion_id)
+    return _json({"sugerencias": sg.sugerir(_engine(), organizacion_id)})
+
+
+@router.post("/api/organizaciones/{organizacion_id}/requerimientos/sugerencias/crear", status_code=201)
+def crear_sugerido(organizacion_id: int, datos: DesdeSugerencia, request: Request, u: seg.Usuario = Depends(gestion)) -> dict:
+    from core.cumplimiento import sugerencias as sg
+    org = _organizacion(organizacion_id)
+    r = _seguro(lambda: sg.crear_desde_sugerencia(_engine(), organizacion_id, datos.clave, u.username))
+    seg.auditar(u, "CREATE", "requerimientos", f"Requerimiento {r['consecutivo']} de «{org}» creado desde una sugerencia ({datos.clave})",
+                entidad_id=r["id"], ip=seg.ip_cliente(request))
+    return r
+
+
 @router.get("/api/organizaciones/{organizacion_id}/requerimientos/{rid}")
 def detalle(organizacion_id: int, rid: int, u: seg.Usuario = Depends(interno)) -> dict:
     _organizacion(organizacion_id)

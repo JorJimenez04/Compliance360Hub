@@ -81,6 +81,7 @@ ALL_MIGRATIONS: list[str] = [
     "045_aliados_bancarios.sql",
     "046_requerimientos.sql",
     "047_tablero_reportes_uiaf.sql",
+    "048_carpeta_compliance.sql",
 ]
 
 # Tablas / columnas a validar tras las migraciones

@@ -7,6 +7,7 @@ import { enviar, ErrorApi } from "@/lib/api";
 import { useDatos } from "@/lib/useDatos";
 import { fechaHora, haceCuanto } from "@/lib/formato";
 import { cn } from "@/lib/cn";
+import { BotonPaqueteBanco } from "./paquete-banco";
 import { usePuedeGestionar } from "@/lib/sesion";
 
 export interface ArchivoDoc {
@@ -136,10 +137,11 @@ export default function DocumentacionPropia({ clienteId, enlace, onGuardado }: {
           <Tarjeta>
             <TituloTarjeta titulo="Documentación corporativa"
               descripcion="Cada archivo se reconoce por su nombre. Si alguno no se reconoce, asígnelo a mano: queda así aunque se vuelva a revisar."
-              accion={<span className={cn("inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium",
+              accion={<span className="flex flex-wrap items-start gap-2"><BotonPaqueteBanco clienteId={clienteId} />
+                <span className={cn("inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium",
                 e.listo_para_banco ? "border-ok/40 bg-ok/10 text-ok" : "border-alerta/40 bg-alerta/10 text-alerta")}>
                 <span className={cn("size-2.5 rounded-full", e.listo_para_banco ? "bg-ok" : "bg-alerta")} />
-                {e.listo_para_banco ? "Listo para banco" : `Faltan ${e.faltan.length}`}</span>} />
+                {e.listo_para_banco ? "Listo para banco" : `Faltan ${e.faltan.length}`}</span></span>} />
             <div className="px-5 pb-4 pt-1">
               <Checklist requisitos={e.requisitos} documentos={e.documentos} onHecho={estado.recargar} />
             </div>

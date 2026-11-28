@@ -20,7 +20,8 @@ interface Subcliente extends Kpis {
   documentos: { cargados: number; exigidos: number; listo_para_banco: boolean; carpeta: boolean } | null;
   top_beneficiarios: Beneficiario[]; concentracion_top3: number | null; ultima: string;
 }
-interface ResumenAliados { activos: number; diligencia_pendiente: number; revision_vencida: number; riesgo_alto: number }
+interface ResumenAliados { activos: number; diligencia_pendiente: number; revision_vencida: number; riesgo_alto: number;
+  documentos_vencidos?: number; documentos_por_vencer?: number }
 interface Organizacion {
   id: number; nombre: string; kpis: Kpis; subclientes: Subcliente[];
   alertas: { abiertas: number; posible_ros: number; escaladas: number; sin_atender: number };
@@ -33,7 +34,7 @@ interface Datos {
   kpis: Kpis; serie: { mes: string; monto_pagado: number; pagos: number }[]; organizaciones: Organizacion[];
   alertas: { abiertas: number; posible_ros: number; escaladas: number; sin_atender: number };
   posible_ros: { id: number; organizacion_id: number; titulo: string; prioridad: string; periodo: string; subcliente: string | null }[];
-  requerimientos: ReqTablero[]; resumen_requerimientos: { abiertos: number; atrasados: number; por_vencer: number; fuera_de_plazo: number; total: number };
+  requerimientos: ReqTablero[]; resumen_requerimientos: { abiertos: number; atrasados: number; por_vencer: number; fuera_de_plazo: number; total: number; sin_evidencia_respuesta?: number };
   aliados: ResumenAliados;
   reportes_uiaf: { ros: number; aros: number; otros: number;
     lista: { id: number; organizacion: string; tipo: string; periodo_desde: string | null; periodo_hasta: string | null; fecha_presentacion: string; radicado: string | null; subcliente: string | null; archivo_nombre: string }[] };
@@ -115,7 +116,8 @@ export default function TableroCumplimiento() {
             <Cifra titulo="Requerimientos abiertos" valor={entero(t.resumen_requerimientos.abiertos)} tono={t.resumen_requerimientos.atrasados ? "critico" : undefined}
               detalle={<>{t.resumen_requerimientos.atrasados} atrasados · {t.resumen_requerimientos.por_vencer} por vencer</>} />
             <Cifra titulo="Aliados bancarios activos" valor={entero(t.aliados.activos)} tono={t.aliados.diligencia_pendiente ? "alerta" : undefined}
-              detalle={<>{t.aliados.diligencia_pendiente} sin diligencia · {t.aliados.revision_vencida} revisión vencida</>} />
+              detalle={<>{t.aliados.diligencia_pendiente} sin diligencia · {t.aliados.revision_vencida} revisión vencida
+                {t.aliados.documentos_vencidos ? <> · <span className="text-critico">{t.aliados.documentos_vencidos} con documentos vencidos</span></> : null}</>} />
           </div>
 
           {t.avisos.length > 0 && (

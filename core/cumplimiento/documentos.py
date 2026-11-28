@@ -152,6 +152,14 @@ class LectorGraph:
             url = d.get("@odata.nextLink")
         return elementos
 
+    def descargar(self, drive_id: str, item_id: str) -> bytes:
+        """Contenido de un archivo (solo lectura)."""
+        r = self.f.http.get(f"{self.GRAPH}/drives/{drive_id}/items/{item_id}/content", headers=self.f._cabeceras(),
+                            timeout=max(self.f.timeout, 120), allow_redirects=True)
+        if r.status_code != 200:
+            raise ErrorCarpeta(f"No se pudo descargar un archivo de OneDrive ({r.status_code}).")
+        return r.content
+
 
 def lector_configurado(engine: Engine):
     from core.monitoreo_tx.nube.fuentes import ErrorFuente, fuente_configurada
@@ -212,6 +220,8 @@ def revisar(engine: Engine, cliente_id: int, lector=None, usuario: str = "sistem
                     idb = re.sub(r"[.\-\s]", "", m.group(1)) if m else None
                     if idb:
                         benef_carpetas[idb] = (b, _archivos(lector, drive, b, f"{i['name']}/{b['name']}", 1))
+            elif _es_carpeta(i) and n.lstrip("0123456789. -_").startswith("requerimiento"):
+                continue        # evidencias de requerimientos: las lee carpeta_compliance, no son documentos propios
             elif _es_carpeta(i):
                 propios += _archivos(lector, drive, i, i["name"])
             else:
@@ -257,7 +267,10 @@ def revisar(engine: Engine, cliente_id: int, lector=None, usuario: str = "sistem
 
 
 def revisar_todos(engine: Engine) -> None:
-    """Revisa las carpetas de todos los clientes que tienen enlace. Nunca lanza excepción."""
+    """Revisa las carpetas Compliance de las organizaciones (que enlazan subclientes, aliados y
+    requerimientos) y luego las carpetas de todos los clientes con enlace. Nunca lanza excepción."""
+    from core.cumplimiento.carpeta_compliance import revisar_todas
+    revisar_todas(engine)
     try:
         with engine.connect() as conn:
             ids = list(conn.scalars(text("SELECT id FROM clientes WHERE carpeta_onedrive IS NOT NULL")))

@@ -60,6 +60,9 @@ class Entidad(BaseModel):
 
 class Relacion(BaseModel):
     fecha_inicio: date | None = None
+    vence_contrato: date | None = None
+    vence_poliza: date | None = None
+    vence_licencia: date | None = None
     servicios: list[str] | None = Field(None, max_length=10)
     monedas: list[str] | None = Field(None, max_length=10)
     exigencias: list[str] | None = Field(None, max_length=30)
@@ -151,3 +154,24 @@ def mover(organizacion_id: int, relacion_id: int, datos: Movimiento, request: Re
     seg.auditar(u, "UPDATE", "aliados_bancarios", f"Aliado «{nombre}» de «{org}»: {', '.join(hechos)}. Motivo: {d['motivo']}",
                 entidad_id=relacion_id, ip=seg.ip_cliente(request), valores_nuevos=_json(d))
     return {"ok": True, "cambios": hechos}
+
+
+class Asignacion(BaseModel):
+    codigo: str | None = None
+
+
+@router.post("/api/organizaciones/{organizacion_id}/aliados/documentos/{documento_id}/asignar")
+def asignar_documento(organizacion_id: int, documento_id: int, datos: Asignacion, request: Request,
+                      u: seg.Usuario = Depends(gestion)) -> dict:
+    """Corrige qué documento es un archivo de la carpeta del aliado (cuando el nombre no lo dice)."""
+    from core.cumplimiento import carpeta_compliance as cc
+    _organizacion(organizacion_id)
+    try:
+        cc.asignar_documento_aliado(_engine(), organizacion_id, documento_id, datos.codigo, u.username)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    seg.auditar(u, "UPDATE", "aliados_bancarios", f"Documento de aliado {documento_id} asignado como «{datos.codigo or 'sin asignar'}»",
+                entidad_id=documento_id, ip=seg.ip_cliente(request))
+    return {"ok": True}

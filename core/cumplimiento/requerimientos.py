@@ -138,14 +138,15 @@ def _consecutivo(conn, organizacion_id: int, anio: int) -> str:
 
 
 # ---------- Escritura ----------
-def crear(engine: Engine, organizacion_id: int, datos: dict, usuario: str) -> dict:
+def crear(engine: Engine, organizacion_id: int, datos: dict, usuario: str, clave_origen: str | None = None) -> dict:
     with engine.begin() as conn:
         base = {"prioridad": "media", "responsable": usuario, "referencias_tx": []}
         v = {**base, **_validar(conn, organizacion_id, {**base, **datos})}
         consecutivo = _consecutivo(conn, organizacion_id, v["fecha_recibido"].year)
-        cols = list(v) + ["organizacion_id", "consecutivo", "creado_por"]
+        cols = list(v) + ["organizacion_id", "consecutivo", "creado_por", "clave_origen"]
         rid = conn.scalar(text(f"INSERT INTO requerimientos ({', '.join(cols)}) VALUES ({', '.join(':' + c for c in cols)}) RETURNING id"),
-                          {**v, "organizacion_id": organizacion_id, "consecutivo": consecutivo, "creado_por": usuario})
+                          {**v, "organizacion_id": organizacion_id, "consecutivo": consecutivo, "creado_por": usuario,
+                           "clave_origen": clave_origen})
         _evento(conn, rid, "alta", None, ESTADOS["recibido"], _texto(datos.get("comentario")), usuario)
         bens = _beneficiarios(datos.get("beneficiarios"))
         if bens:
@@ -256,6 +257,9 @@ def _lista(engine: Engine, donde: str, params: dict, hoy: date | None) -> list[d
     for q in filas:
         q["referencias_tx"] = list(q["referencias_tx"] or [])
         q.update(_situacion(q, hoy))
+        # Evidencias (solo si la carpeta del requerimiento se encontró en la carpeta Compliance)
+        q["sin_evidencia_respuesta"] = (q["estado"] in ("enviado", "cerrado") and q.get("carpeta_item_id") is not None
+                                        and not q.get("ev_respuesta"))
     return filas
 
 
@@ -265,6 +269,7 @@ def resumen(filas: list[dict]) -> dict:
         "atrasados": sum(q["plazo"] == "atrasado" for q in filas),
         "por_vencer": sum(q["plazo"] == "por_vencer" for q in filas),
         "fuera_de_plazo": sum(q["plazo"] == "fuera_de_plazo" for q in filas),
+        "sin_evidencia_respuesta": sum(bool(q.get("sin_evidencia_respuesta")) for q in filas),
         "total": len(filas),
     }
 

@@ -17,6 +17,7 @@ openpyxl==3.1.5
 requests==2.33.0
 bcrypt==5.0.0
 cryptography==46.0.6
+fpdf2==2.8.7          # paquete para el banco (resumen KYC en PDF)
 
 # Pruebas
 pytest==9.0.2

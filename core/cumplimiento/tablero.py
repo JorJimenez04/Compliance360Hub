@@ -263,7 +263,8 @@ def tablero(engine: Engine, desde: date | None = None, hasta: date | None = None
         "alertas": alertas["total"], "posible_ros": alertas["posible_ros"],
         "requerimientos": reqs, "resumen_requerimientos": resumen_req,
         "aliados": {k: sum(o["aliados"][k] for o in organizaciones) for k in ("activos", "diligencia_pendiente",
-                                                                               "revision_vencida", "riesgo_alto")},
+                                                                               "revision_vencida", "riesgo_alto",
+                                                                               "documentos_vencidos", "documentos_por_vencer")},
         "reportes_uiaf": reportes,
     }
     resultado["avisos"] = avisos(resultado)
@@ -283,6 +284,9 @@ def avisos(t: dict) -> list[dict]:
         poner("alta", f"{t['alertas']['sin_atender']} alerta(s) críticas o altas sin atender hace más de {DIAS_SIN_ATENDER} días.")
     if t["resumen_requerimientos"]["atrasados"]:
         poner("alta", f"{t['resumen_requerimientos']['atrasados']} requerimiento(s) atrasado(s).")
+    if t["resumen_requerimientos"].get("sin_evidencia_respuesta"):
+        poner("media", f"{t['resumen_requerimientos']['sin_evidencia_respuesta']} requerimiento(s) marcados como enviados "
+                       "sin archivos en «3. Respuesta» de su carpeta.")
     for o in t["organizaciones"]:
         base = f"/organizaciones/{o['id']}"
         for s in o["subclientes"]:
@@ -305,6 +309,12 @@ def avisos(t: dict) -> list[dict]:
                 poner("baja", f"En {s['nombre']}, los 3 principales beneficiarios concentran el {s['concentracion_top3']:.0%} de lo pagado.", enlace)
         if o["aliados"]["diligencia_pendiente"]:
             poner("media", f"{o['nombre']}: {o['aliados']['diligencia_pendiente']} aliado(s) bancario(s) vigentes sin debida diligencia completa.",
+                  f"{base}?tab=aliados")
+        if o["aliados"].get("documentos_vencidos"):
+            poner("alta", f"{o['nombre']}: {o['aliados']['documentos_vencidos']} aliado(s) con contrato, póliza o licencia vencidos.",
+                  f"{base}?tab=aliados")
+        if o["aliados"].get("documentos_por_vencer"):
+            poner("media", f"{o['nombre']}: {o['aliados']['documentos_por_vencer']} aliado(s) con documentos por vencer en 30 días.",
                   f"{base}?tab=aliados")
         if o["aliados"]["revision_vencida"]:
             poner("media", f"{o['nombre']}: {o['aliados']['revision_vencida']} aliado(s) con la revisión vencida.", f"{base}?tab=aliados")
