@@ -17,7 +17,7 @@ from datetime import date
 
 from sqlalchemy import Engine, text
 
-ORIGENES = {"aliado": "Aliado bancario", "regulador": "Regulador", "auditoria": "Auditoría",
+ORIGENES = {"aliado": "Aliado bancario", "director": "Director de cumplimiento", "regulador": "Regulador", "auditoria": "Auditoría",
             "oficial": "Oficial de cumplimiento", "otro": "Otro"}
 TIPOS = {"kyc_kyb": "KYC / KYB de un cliente", "rfi_transacciones": "RFI de transacciones",
          "recertificacion_aml": "Recertificación AML", "reporte_periodico": "Reporte periódico",
@@ -98,6 +98,30 @@ def _validar(conn, organizacion_id: int, datos: dict, actual: dict | None = None
     return v
 
 
+def _beneficiarios(datos) -> list[dict] | None:
+    """Beneficiarios involucrados: [{id_beneficiario, nombre, actividad, notas}]. None = no se tocan."""
+    if datos is None:
+        return None
+    vistos: dict[str, dict] = {}
+    for b in datos:
+        nombre = _texto(b.get("nombre"))
+        if not nombre:
+            raise ErrorRequerimiento("Cada beneficiario necesita un nombre.")
+        doc = _texto(b.get("id_beneficiario"))
+        vistos.setdefault((doc or nombre).lower(), {"id_beneficiario": doc, "nombre": nombre,
+                                                    "actividad": _texto(b.get("actividad")), "notas": _texto(b.get("notas"))})
+    if len(vistos) > 50:
+        raise ErrorRequerimiento("Máximo 50 beneficiarios por requerimiento.")
+    return list(vistos.values())
+
+
+def _guardar_beneficiarios(conn, rid: int, lista: list[dict]) -> None:
+    conn.execute(text("DELETE FROM requerimiento_beneficiarios WHERE requerimiento_id = :r"), {"r": rid})
+    for b in lista:
+        conn.execute(text("INSERT INTO requerimiento_beneficiarios (requerimiento_id, id_beneficiario, nombre, actividad, notas) "
+                          "VALUES (:r, :id_beneficiario, :nombre, :actividad, :notas)"), {"r": rid, **b})
+
+
 def _evento(conn, rid: int, tipo: str, antes, despues, comentario, usuario: str) -> None:
     conn.execute(text("INSERT INTO requerimiento_eventos (requerimiento_id, tipo, valor_anterior, valor_nuevo, comentario, usuario) "
                       "VALUES (:r, :t, :a, :d, :c, :u)"),
@@ -123,6 +147,9 @@ def crear(engine: Engine, organizacion_id: int, datos: dict, usuario: str) -> di
         rid = conn.scalar(text(f"INSERT INTO requerimientos ({', '.join(cols)}) VALUES ({', '.join(':' + c for c in cols)}) RETURNING id"),
                           {**v, "organizacion_id": organizacion_id, "consecutivo": consecutivo, "creado_por": usuario})
         _evento(conn, rid, "alta", None, ESTADOS["recibido"], _texto(datos.get("comentario")), usuario)
+        bens = _beneficiarios(datos.get("beneficiarios"))
+        if bens:
+            _guardar_beneficiarios(conn, rid, bens)
     return {"id": rid, "consecutivo": consecutivo}
 
 
@@ -139,11 +166,19 @@ def actualizar(engine: Engine, organizacion_id: int, rid: int, datos: dict, usua
         actual = _actual(conn, organizacion_id, rid)
         v = _validar(conn, organizacion_id, datos, {k: actual[k] for k in CAMPOS})
         cambios = [k for k in v if v[k] != actual[k]]
-        if not cambios:
-            return []
-        conn.execute(text(f"UPDATE requerimientos SET {', '.join(f'{k} = :{k}' for k in cambios)}, "
-                          "actualizado_en = CURRENT_TIMESTAMP WHERE id = :r"), {**{k: v[k] for k in cambios}, "r": rid})
-        _evento(conn, rid, "edicion", None, ", ".join(cambios), None, usuario)
+        if cambios:
+            conn.execute(text(f"UPDATE requerimientos SET {', '.join(f'{k} = :{k}' for k in cambios)}, "
+                              "actualizado_en = CURRENT_TIMESTAMP WHERE id = :r"), {**{k: v[k] for k in cambios}, "r": rid})
+        bens = _beneficiarios(datos.get("beneficiarios"))
+        if bens is not None:
+            antes = [dict(f._mapping) for f in conn.execute(text(
+                "SELECT id_beneficiario, nombre, actividad, notas FROM requerimiento_beneficiarios "
+                "WHERE requerimiento_id = :r ORDER BY id"), {"r": rid})]
+            if antes != bens:
+                _guardar_beneficiarios(conn, rid, bens)
+                cambios.append("beneficiarios")
+        if cambios:
+            _evento(conn, rid, "edicion", None, ", ".join(cambios), None, usuario)
     return cambios
 
 
@@ -186,7 +221,10 @@ def agregar_nota(engine: Engine, organizacion_id: int, rid: int, comentario: str
 
 # ---------- Consultas ----------
 _SELECT = """
-    SELECT q.*, c.razon_social AS cliente, b.nombre AS aliado, o.nombre AS organizacion
+    SELECT q.*, c.razon_social AS cliente, b.nombre AS aliado, o.nombre AS organizacion,
+           (SELECT COALESCE(json_agg(json_build_object('id_beneficiario', x.id_beneficiario, 'nombre', x.nombre,
+                                                       'actividad', x.actividad, 'notas', x.notas) ORDER BY x.id), '[]')
+              FROM requerimiento_beneficiarios x WHERE x.requerimiento_id = q.id) AS beneficiarios
       FROM requerimientos q
       JOIN organizaciones o ON o.id = q.organizacion_id
       LEFT JOIN clientes c ON c.id = q.cliente_id
@@ -265,3 +303,18 @@ def opciones(engine: Engine, organizacion_id: int) -> dict:
             "SELECT r.id, b.nombre, r.estado FROM org_aliados r JOIN aliados_bancarios b ON b.id = r.aliado_id "
             "WHERE r.organizacion_id = :o ORDER BY lower(b.nombre)"), {"o": organizacion_id})]
     return {"clientes": clientes, "aliados": aliados}
+
+
+def buscar_beneficiarios(engine: Engine, cliente_id: int, termino: str, limite: int = 15) -> list[dict]:
+    """Beneficiarios a los que les ha pagado el subcliente, para elegirlos en un requerimiento."""
+    t = (_texto(termino) or "")
+    if len(t) < 2:
+        return []
+    with engine.connect() as conn:
+        return [dict(f._mapping) for f in conn.execute(text(
+            "SELECT t.id_beneficiario, max(t.beneficiario) AS nombre, count(*) AS pagos, sum(t.monto) AS monto "
+            "FROM tx_transacciones t JOIN tx_empresas e ON e.nombre_reporte = t.cliente "
+            "WHERE e.cliente_id = :c AND t.exitosa AND t.tipo_transaccion ILIKE 'd_bito%' "
+            "AND (t.beneficiario ILIKE :q OR t.id_beneficiario ILIKE :q) "
+            "GROUP BY t.id_beneficiario ORDER BY sum(t.monto) DESC LIMIT :n"),
+            {"c": cliente_id, "q": f"%{t}%", "n": limite})]

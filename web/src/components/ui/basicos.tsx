@@ -32,7 +32,7 @@ export function Tarjeta({ className, ...p }: HTMLAttributes<HTMLDivElement>) {
 }
 
 export function TituloTarjeta({ titulo, descripcion, accion, className }:
-  { titulo: string; descripcion?: ReactNode; accion?: ReactNode; className?: string }) {
+  { titulo: ReactNode; descripcion?: ReactNode; accion?: ReactNode; className?: string }) {
   return (
     <div className={cn("flex items-start justify-between gap-4 px-5 pt-4", className)}>
       <div className="min-w-0">

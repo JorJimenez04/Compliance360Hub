@@ -4,9 +4,9 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSesion } from "@/lib/sesion";
 
-// Cada perfil aterriza en su primer módulo: la junta en su tablero, el resto en Monitoreo.
+// Cada perfil aterriza en su primer módulo: el director en el tablero de cumplimiento, la junta en el suyo, el resto en Monitoreo.
 const RUTAS: Record<string, string> = {
-  junta: "/junta", monitoreo: "/monitoreo", catalogo: "/catalogo", organizaciones: "/organizaciones", usuarios: "/usuarios", auditoria: "/auditoria",
+  tablero: "/tablero", junta: "/junta", monitoreo: "/monitoreo", catalogo: "/catalogo", organizaciones: "/organizaciones", usuarios: "/usuarios", auditoria: "/auditoria",
 };
 
 export default function Inicio() {
